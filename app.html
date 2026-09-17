@@ -21,7 +21,14 @@
           <a href="#"><i data-lucide="hard-hat"></i> Técnicos</a>
           <a href="#"><i data-lucide="package"></i> Almacén</a>
           <p>COMERCIAL</p>
-          <a class="is-current" href="#ventas"><i data-lucide="badge-dollar-sign"></i> Ventas</a>
+          <div class="sales-nav-group">
+            <a class="is-current sales-parent" href="#ventas"><i data-lucide="badge-dollar-sign"></i> Ventas <i data-lucide="chevron-down"></i></a>
+            <div class="sales-submenu" aria-label="Secciones de Ventas">
+              <button class="is-active" type="button" aria-current="page" data-view-target="offers"><i data-lucide="file-text"></i> Ofertas</button>
+              <button type="button" data-view-target="crm"><i data-lucide="columns-3"></i> CRM</button>
+              <button type="button" data-view-target="summary"><i data-lucide="chart-no-axes-combined"></i> Resumen</button>
+            </div>
+          </div>
           <a href="#"><i data-lucide="shopping-cart"></i> Compras</a>
           <p>SISTEMA</p>
           <a href="#"><i data-lucide="shield-check"></i> Calidad</a>
@@ -35,13 +42,7 @@
 
         <div class="page-heading"><div><p class="eyebrow-app">MÓDULO / VENTAS</p><h1>Pipeline comercial</h1><p>Convierte oportunidades de servicio y refacciones en trabajo rentable.</p></div><button type="button" class="button-primary-app" data-new-offer><i data-lucide="plus"></i> Nueva oferta</button></div>
 
-        <div class="view-tabs" role="tablist" aria-label="Vistas del módulo de ventas">
-          <button class="view-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="offers-view" id="offers-tab" data-view-target="offers"><i data-lucide="file-text"></i> Ofertas</button>
-          <button class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="crm-view" id="crm-tab" data-view-target="crm"><i data-lucide="columns-3"></i> CRM</button>
-          <button class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="summary-view" id="summary-tab" data-view-target="summary"><i data-lucide="chart-no-axes-combined"></i> Resumen</button>
-        </div>
-
-        <section class="app-view is-active" id="offers-view" role="tabpanel" aria-labelledby="offers-tab" data-view="offers">
+        <section class="app-view is-active" id="offers-view" aria-label="Ofertas" data-view="offers">
           <div class="sales-metrics"><article><span>OFERTAS ABIERTAS</span><strong>24</strong><small><i data-lucide="arrow-up-right"></i> 4 esta semana</small></article><article><span>VALOR EN PIPELINE</span><strong>$4.28M</strong><small><i data-lucide="arrow-up-right"></i> 18.2% vs. ago</small></article><article><span>MARGEN ESTIMADO</span><strong>31.8%</strong><small><i data-lucide="minus"></i> En objetivo</small></article><article><span>POR VENCER</span><strong>6</strong><small class="risk"><i data-lucide="triangle-alert"></i> Próximos 7 días</small></article></div>
           <div class="offer-workspace">
             <div class="data-surface offers-table"><div class="surface-toolbar"><div class="filter-group"><button type="button" class="filter-button"><i data-lucide="sliders-horizontal"></i> Todos los estados <i data-lucide="chevron-down"></i></button><button type="button" class="filter-button">Propietario: todos <i data-lucide="chevron-down"></i></button></div><div class="surface-toolbar-actions"><button type="button" class="toolbar-icon" aria-label="Buscar ofertas"><i data-lucide="search"></i></button><button type="button" class="toolbar-icon" aria-label="Configurar columnas"><i data-lucide="columns-3"></i></button></div></div>
@@ -57,7 +58,7 @@
           </div>
         </section>
 
-        <section class="app-view" id="crm-view" role="tabpanel" aria-labelledby="crm-tab" data-view="crm" hidden>
+        <section class="app-view" id="crm-view" aria-label="CRM" data-view="crm" hidden>
           <div class="crm-topline"><div><strong>18 oportunidades activas</strong><span>Actualizado hace 8 minutos</span></div><div class="crm-view-controls"><button type="button" class="filter-button"><i data-lucide="filter"></i> Filtros</button><button type="button" class="filter-button"><i data-lucide="users"></i> Equipo comercial</button></div></div>
           <div class="kanban-board">
             <section class="kanban-column"><header><div><span class="stage-dot new"></span> NUEVA OPORTUNIDAD</div><b>4</b></header><div class="kanban-value">$742K</div><article class="deal-card"><span class="deal-type">SERVICIO EN CAMPO</span><h3>Diagnóstico de cargador frontal</h3><p>Constructora Garza</p><div><strong>$184,500</strong><span>CP</span></div></article><article class="deal-card"><span class="deal-type">REFACCIONES</span><h3>Kit de sellos y pistones</h3><p>Maquinaria Vértice</p><div><strong>$92,700</strong><span>LA</span></div></article><article class="deal-card"><span class="deal-type">TALLER</span><h3>Revisión de tren de potencia</h3><p>Logística Norte</p><div><strong>$265,300</strong><span>MR</span></div></article></section>
@@ -68,7 +69,7 @@
           </div>
         </section>
 
-        <section class="app-view" id="summary-view" role="tabpanel" aria-labelledby="summary-tab" data-view="summary" hidden>
+        <section class="app-view" id="summary-view" aria-label="Resumen de ventas" data-view="summary" hidden>
           <div class="summary-header"><div><span>SEPTIEMBRE 2026</span><h2>El pipeline crece con margen saludable.</h2></div><button type="button" class="button-secondary-app"><i data-lucide="download"></i> Exportar reporte</button></div>
           <div class="summary-kpis"><article><div><span>VENTA CERRADA</span><strong>$2.14M</strong></div><em><i data-lucide="trending-up"></i> 22.6%</em><small>vs. periodo anterior</small></article><article><div><span>CONVERSIÓN</span><strong>38.4%</strong></div><em><i data-lucide="trending-up"></i> 4.1 pp</em><small>de oportunidad a cierre</small></article><article><div><span>MARGEN BRUTO</span><strong>32.1%</strong></div><em class="neutral"><i data-lucide="minus"></i> 0.6 pp</em><small>meta: 30.0%</small></article><article><div><span>CICLO DE VENTA</span><strong>18.6d</strong></div><em><i data-lucide="trending-down"></i> 2.4d</em><small>desde diagnóstico</small></article></div>
           <div class="summary-grid"><article class="dashboard-panel pipeline-chart"><header><div><span class="panel-label">PIPELINE POR ETAPA</span><h3>$4.28M <small>valor total</small></h3></div><button type="button" class="icon-button" aria-label="Más opciones"><i data-lucide="more-horizontal"></i></button></header><div class="bar-chart"><div><span>Diagnóstico</span><i><b style="width: 43%"></b></i><strong>$618K</strong></div><div><span>Oferta enviada</span><i><b style="width: 100%"></b></i><strong>$1.42M</strong></div><div><span>Negociación</span><i><b style="width: 68%"></b></i><strong>$964K</strong></div><div><span>Ganada</span><i class="success"><b style="width: 76%"></b></i><strong>$1.08M</strong></div></div></article><article class="dashboard-panel funnel-panel"><header><div><span class="panel-label">CONVERSIÓN DEL EMBUDO</span><h3>38.4% <small>cierre de venta</small></h3></div></header><div class="funnel"><div class="funnel-a"><b>47</b><span>Oportunidades</span></div><div class="funnel-b"><b>31</b><span>Ofertas emitidas</span></div><div class="funnel-c"><b>18</b><span>En negociación</span></div><div class="funnel-d"><b>11</b><span>Cierres</span></div></div></article><article class="dashboard-panel wide-panel margin-chart"><header><div><span class="panel-label">MARGEN REAL VS. ESTIMADO</span><h3>31.7% <small>margen de órdenes cerradas</small></h3></div><div class="chart-legend"><span><i></i> Estimado</span><span><i></i> Real</span></div></header><div class="line-area"><div class="line-grid"></div><div class="line estimated"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="line actual"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="line-labels"><span>ABR</span><span>MAY</span><span>JUN</span><span>JUL</span><span>AGO</span><span>SEP</span></div></div></article><article class="dashboard-panel owners-panel"><header><div><span class="panel-label">EQUIPO COMERCIAL</span><h3>Por venta cerrada</h3></div></header><div class="owner-row"><span class="avatar-small red-avatar">MR</span><div><b>Mariana Ruiz</b><small>5 cierres · 35.4% conversión</small></div><strong>$814K</strong></div><div class="owner-row"><span class="avatar-small dark-avatar">CP</span><div><b>Carlos Pérez</b><small>3 cierres · 31.2% conversión</small></div><strong>$692K</strong></div><div class="owner-row"><span class="avatar-small lime-avatar">LA</span><div><b>Laura Ávila</b><small>3 cierres · 28.7% conversión</small></div><strong>$634K</strong></div></article></div>
