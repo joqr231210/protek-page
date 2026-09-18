@@ -26,6 +26,7 @@ export type Quote = {
   customerId: number;
   customerName: string;
   title: string;
+  notes?: string | null;
   serviceMode: ServiceMode;
   currencyCode: CurrencyCode;
   totalAmount: number;

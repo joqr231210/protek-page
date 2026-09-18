@@ -62,7 +62,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
       .order("updated_at", { ascending: false }),
     supabase
       .from("quotes")
-      .select("id, quote_number, customer_id, opportunity_id, title, service_mode, currency_code, total_amount, estimated_margin_percent, status, updated_at, valid_until")
+      .select("id, quote_number, customer_id, opportunity_id, title, notes, service_mode, currency_code, total_amount, estimated_margin_percent, status, updated_at, valid_until")
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("updated_at", { ascending: false }),
@@ -114,6 +114,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
       customerId: asNumber(row.customer_id),
       customerName: customerNameById.get(asNumber(row.customer_id)) ?? "Cliente sin nombre",
       title: asString(row.title),
+      notes: typeof row.notes === "string" ? row.notes : null,
       serviceMode: asString(row.service_mode) as Quote["serviceMode"],
       currencyCode: row.currency_code === "USD" || row.currency_code === "EUR" ? row.currency_code : "MXN",
       totalAmount: asNumber(row.total_amount),

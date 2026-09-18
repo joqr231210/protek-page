@@ -6,6 +6,8 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 
 - A single **Ventas** parent entry with sidebar submenu views for Offers, Tablero, and Summary.
 - Offers open in a dedicated detail view. New Offer hides the offer table and metrics, groups commercial fields under **Información General**, and includes **Información técnica** for the operational handoff.
+- **Información General** keeps the business context together: offer name, notes, estimated amounts, currency immediately before validity, and related documents.
+- **Información técnica** starts with the asset and a technical template selector. The starter `Ficha electromecánica estándar` renders serial number, brand, type, voltage, current, speed, weight, and color before the universal reported-condition field. Sales settings expose **Plantillas técnicas de oferta** as the configuration entry point.
 - **Información General** includes related documents: each attachment has a business-facing name and file metadata, and removing an attachment always requires a confirmation dialog.
 - The offer intake selects an existing customer through a searchable dropdown, requires a service type and currency, and displays monetary inputs with the selected currency prefix and format.
 - A **Clientes** submenu provides inline create and edit flows for company-scoped customer records.
@@ -20,6 +22,8 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 - Primary CRUD is inline in the work surface. Popups are reserved for confirmations, destructive operations, and exceptional decisions.
 
 Attachment persistence is intentionally kept separate from the form interaction. The current detail experience manages attachments in the offer workspace; production persistence should use a company-scoped Supabase Storage bucket and a `quote_documents` record tied to the canonical quote once remote schema administration is available.
+
+The starter technical template is currently a UI schema. Its multi-company definition, assignment, typed-value, and versioned-snapshot tables should be introduced together in the custom-field migration, rather than persisting an unvalidated JSON blob on `quotes`.
 
 ## Intentionally not duplicated
 
