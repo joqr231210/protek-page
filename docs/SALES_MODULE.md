@@ -6,6 +6,7 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 
 - A single **Ventas** parent entry with sidebar submenu views for Summary, Offers, Tablero, and Customers. Summary is the default entry and highlights offers pending an update for more than 30 days, plus the ten most recently updated offers with direct access to their detail.
 - Offers open in a dedicated detail view. New Offer hides the offer table and metrics, groups commercial fields under **Información General**, and includes **Información técnica** for the operational handoff.
+- Existing offers expose a color-coded status selector beside the responsible owner. Changing it updates the offer stage, status pill, table, and board in the current demo session.
 - **Información General** keeps the business context together: offer name, notes, estimated amounts, currency immediately before validity, and related documents.
 - **Información técnica** starts with the asset and a technical template selector. The starter `Ficha electromecánica estándar` renders serial number, brand, type, voltage, current, speed, weight, and color before the universal reported-condition field. Sales settings expose **Plantillas técnicas de oferta** as the configuration entry point.
 - **Información General** includes related documents: each attachment has a business-facing name and file metadata, and removing an attachment always requires a confirmation dialog.
