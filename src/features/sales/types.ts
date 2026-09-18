@@ -1,5 +1,6 @@
 export type ServiceMode = "workshop" | "field" | "parts";
 export type CurrencyCode = "MXN" | "USD" | "EUR";
+export type SalesMember = { id: string; displayName: string };
 
 export type Customer = {
   id: number;
@@ -27,6 +28,8 @@ export type Quote = {
   customerName: string;
   title: string;
   notes?: string | null;
+  responsibleId?: string | null;
+  responsibleName?: string | null;
   serviceMode: ServiceMode;
   currencyCode: CurrencyCode;
   totalAmount: number;
@@ -41,7 +44,10 @@ export type Quote = {
 export type Opportunity = {
   id: number;
   customerName: string;
+  customerId?: number;
   title: string;
+  responsibleId?: string | null;
+  responsibleName?: string | null;
   serviceMode: ServiceMode;
   estimatedRevenue: number;
   stageId: number;
@@ -56,6 +62,7 @@ export type SalesOverview = {
   organizations: Array<{ id: number; name: string }>;
   isDemo: boolean;
   customers: Customer[];
+  members: SalesMember[];
   stages: Stage[];
   quotes: Quote[];
   opportunities: Opportunity[];

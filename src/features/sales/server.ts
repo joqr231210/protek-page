@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Customer, Opportunity, Quote, SalesOverview, Stage } from "./types";
+import type { Customer, Opportunity, Quote, SalesMember, SalesOverview, Stage } from "./types";
 
 type DatabaseRow = Record<string, unknown>;
 
@@ -43,7 +43,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
   const organizationId = selectedOrganization.id;
   const organizationName = selectedOrganization.name;
 
-  const [stagesResult, customersResult, opportunitiesResult, quotesResult] = await Promise.all([
+  const [stagesResult, customersResult, opportunitiesResult, quotesResult, membersResult] = await Promise.all([
     supabase
       .from("pipeline_stages")
       .select("id, stage_key, name, position, probability_percent, is_closed, outcome")
@@ -56,7 +56,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
       .is("archived_at", null),
     supabase
       .from("sales_opportunities")
-      .select("id, customer_id, title, service_mode, estimated_revenue, stage_id, expected_close_at")
+      .select("id, customer_id, title, service_mode, estimated_revenue, stage_id, owner_id, expected_close_at")
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("updated_at", { ascending: false }),
@@ -66,9 +66,14 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("organization_members")
+      .select("user_id, profiles(display_name)")
+      .eq("organization_id", organizationId)
+      .eq("status", "active"),
   ]);
 
-  if (stagesResult.error || customersResult.error || opportunitiesResult.error || quotesResult.error) {
+  if (stagesResult.error || customersResult.error || opportunitiesResult.error || quotesResult.error || membersResult.error) {
     return null;
   }
 
@@ -91,12 +96,20 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
     status: row.status === "active" || row.status === "inactive" || row.status === "prospect" ? row.status : "prospect",
   }));
   const customerNameById = new Map(customers.map((customer) => [customer.id, customer.displayName]));
+  const members: SalesMember[] = (membersResult.data as DatabaseRow[]).map((row) => {
+    const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    return { id: asString(row.user_id), displayName: profile && typeof profile === "object" && "display_name" in profile ? asString(profile.display_name) : "Usuario sin nombre" };
+  });
+  const memberNameById = new Map(members.map((member) => [member.id, member.displayName]));
   const opportunities: Opportunity[] = (opportunitiesResult.data as DatabaseRow[]).map((row) => {
     const stage = stageById.get(asNumber(row.stage_id));
     return {
       id: asNumber(row.id),
       customerName: customerNameById.get(asNumber(row.customer_id)) ?? "Cliente sin nombre",
+      customerId: asNumber(row.customer_id),
       title: asString(row.title),
+      responsibleId: typeof row.owner_id === "string" ? row.owner_id : null,
+      responsibleName: typeof row.owner_id === "string" ? memberNameById.get(row.owner_id) ?? "Usuario sin nombre" : null,
       serviceMode: asString(row.service_mode) as Opportunity["serviceMode"],
       estimatedRevenue: asNumber(row.estimated_revenue),
       stageId: asNumber(row.stage_id),
@@ -115,6 +128,8 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
       customerName: customerNameById.get(asNumber(row.customer_id)) ?? "Cliente sin nombre",
       title: asString(row.title),
       notes: typeof row.notes === "string" ? row.notes : null,
+      responsibleId: opportunity?.responsibleId ?? null,
+      responsibleName: opportunity?.responsibleName ?? null,
       serviceMode: asString(row.service_mode) as Quote["serviceMode"],
       currencyCode: row.currency_code === "USD" || row.currency_code === "EUR" ? row.currency_code : "MXN",
       totalAmount: asNumber(row.total_amount),
@@ -127,7 +142,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
     };
   });
 
-  return { organizationId, organizationName, organizations, isDemo: false, customers, stages, quotes, opportunities };
+  return { organizationId, organizationName, organizations, isDemo: false, customers, members, stages, quotes, opportunities };
 }
 
 export async function getSalesContext(supabase: SupabaseClient, requestedOrganizationId?: number) {

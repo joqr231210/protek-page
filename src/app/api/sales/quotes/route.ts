@@ -8,12 +8,13 @@ const createQuoteSchema = z.object({
   customerId: z.coerce.number().int().positive(),
   title: z.string().trim().min(3).max(220),
   notes: z.string().trim().max(5_000).optional(),
+  responsibleId: z.string().uuid().optional().or(z.literal("")),
   serviceMode: z.enum(["workshop", "field", "parts"]),
   currencyCode: z.enum(["MXN", "USD", "EUR"]),
-  estimatedRevenue: z.coerce.number().min(0).max(999_999_999),
-  estimatedCost: z.coerce.number().min(0).max(999_999_999),
+  amountBeforeTax: z.coerce.number().min(0).max(999_999_999),
+  totalWithTax: z.coerce.number().min(0).max(999_999_999),
   validUntil: z.string().date().optional().or(z.literal("")),
-});
+}).refine((data) => data.totalWithTax >= data.amountBeforeTax, { message: "Total must include the amount before tax." });
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -53,6 +54,16 @@ export async function POST(request: Request) {
   if (customerError || !customer) {
     return NextResponse.json({ error: "Select an active customer from this company." }, { status: 400 });
   }
+  if (parsed.data.responsibleId) {
+    const { data: responsible } = await supabase
+      .from("organization_members")
+      .select("user_id")
+      .eq("organization_id", context.organizationId)
+      .eq("user_id", parsed.data.responsibleId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (!responsible) return NextResponse.json({ error: "Select an active member of this company as responsible." }, { status: 400 });
+  }
 
   const { data: opportunity, error: opportunityError } = await supabase
     .from("sales_opportunities")
@@ -63,9 +74,9 @@ export async function POST(request: Request) {
       stage_id: newStage.id,
       title: parsed.data.title,
       service_mode: parsed.data.serviceMode,
-      estimated_revenue: parsed.data.estimatedRevenue,
-      estimated_cost: parsed.data.estimatedCost,
-      owner_id: context.userId,
+      estimated_revenue: parsed.data.totalWithTax,
+      estimated_cost: 0,
+      owner_id: parsed.data.responsibleId || context.userId,
     })
     .select("id")
     .single();
@@ -83,7 +94,7 @@ export async function POST(request: Request) {
       notes: parsed.data.notes || null,
       service_mode: parsed.data.serviceMode,
       currency_code: parsed.data.currencyCode,
-      estimated_cost: parsed.data.estimatedCost,
+      estimated_cost: 0,
       valid_until: parsed.data.validUntil || null,
       status: "draft",
     })
@@ -100,7 +111,8 @@ export async function POST(request: Request) {
     line_type: "service",
     description: parsed.data.title,
     quantity: 1,
-    unit_price: parsed.data.estimatedRevenue,
+    unit_price: parsed.data.amountBeforeTax,
+    tax_percent: parsed.data.amountBeforeTax > 0 ? ((parsed.data.totalWithTax / parsed.data.amountBeforeTax) - 1) * 100 : 0,
   });
   if (lineError) return NextResponse.json({ error: "The initial quote line could not be created." }, { status: 500 });
 

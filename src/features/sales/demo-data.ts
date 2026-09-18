@@ -8,6 +8,11 @@ export const demoSalesOverview: SalesOverview = {
     { id: 2, name: "Protek Industrial Norte" },
   ],
   isDemo: true,
+  members: [
+    { id: "mariana-ruiz", displayName: "Mariana Ruiz" },
+    { id: "diego-castro", displayName: "Diego Castro" },
+    { id: "sofia-ramirez", displayName: "Sofía Ramírez" },
+  ],
   customers: [
     { id: 101, displayName: "Minera del Norte", legalName: "Minera del Norte, S.A. de C.V.", taxId: "MNO920415AB2", accountCode: "CL-001", status: "active" },
     { id: 102, displayName: "Grupo Hidalgo", legalName: "Grupo Hidalgo Industrial, S.A. de C.V.", taxId: "GHI881120KQ4", accountCode: "CL-002", status: "active" },
@@ -26,11 +31,11 @@ export const demoSalesOverview: SalesOverview = {
     { id: 5, key: "won", name: "Ganada", position: 50, probability: 100, isClosed: true, outcome: "won" },
   ],
   quotes: [
-    { id: 2098, quoteNumber: 2098, customerId: 101, customerName: "Minera del Norte", title: "Overhaul de cilindro hidráulico", serviceMode: "workshop", currencyCode: "MXN", totalAmount: 486400, estimatedMarginPercent: 34.2, status: "sent", stageKey: "quoted", stageName: "Oferta enviada", updatedAt: "2026-09-17T16:42:00.000Z", validUntil: "2026-09-21" },
-    { id: 2095, quoteNumber: 2095, customerId: 102, customerName: "Grupo Hidalgo", title: "Reparación de transmisión CAT 980", serviceMode: "workshop", currencyCode: "MXN", totalAmount: 318920, estimatedMarginPercent: 29.6, status: "negotiation", stageKey: "negotiation", stageName: "Negociación", updatedAt: "2026-09-16T22:18:00.000Z", validUntil: "2026-09-23" },
-    { id: 2101, quoteNumber: 2101, customerId: 103, customerName: "EnergiPlus", title: "Kit de refacciones para compresor", serviceMode: "parts", currencyCode: "USD", totalAmount: 96800, estimatedMarginPercent: 38.1, status: "draft", stageKey: "new", stageName: "Nueva oportunidad", updatedAt: "2026-09-12T17:06:00.000Z", validUntil: null },
-    { id: 2087, quoteNumber: 2087, customerId: 104, customerName: "Tractocentro Bajío", title: "Diagnóstico de bomba principal", serviceMode: "field", currencyCode: "MXN", totalAmount: 142750, estimatedMarginPercent: 24.8, status: "pending_approval", stageKey: "diagnosis", stageName: "Diagnóstico", updatedAt: "2026-09-11T15:27:00.000Z", validUntil: "2026-09-18" },
-    { id: 2076, quoteNumber: 2076, customerId: 105, customerName: "Acero Monterrey", title: "Mantenimiento de unidad de potencia", serviceMode: "field", currencyCode: "MXN", totalAmount: 254600, estimatedMarginPercent: 32.4, status: "sent", stageKey: "quoted", stageName: "Oferta enviada", updatedAt: "2026-09-10T20:50:00.000Z", validUntil: "2026-09-20" },
+    { id: 2098, quoteNumber: 2098, customerId: 101, customerName: "Minera del Norte", title: "Overhaul de cilindro hidráulico", responsibleId: "mariana-ruiz", responsibleName: "Mariana Ruiz", serviceMode: "workshop", currencyCode: "MXN", totalAmount: 486400, estimatedMarginPercent: 34.2, status: "sent", stageKey: "quoted", stageName: "Oferta enviada", updatedAt: "2026-09-17T16:42:00.000Z", validUntil: "2026-09-21" },
+    { id: 2095, quoteNumber: 2095, customerId: 102, customerName: "Grupo Hidalgo", title: "Reparación de transmisión CAT 980", responsibleId: "diego-castro", responsibleName: "Diego Castro", serviceMode: "workshop", currencyCode: "MXN", totalAmount: 318920, estimatedMarginPercent: 29.6, status: "negotiation", stageKey: "negotiation", stageName: "Negociación", updatedAt: "2026-09-16T22:18:00.000Z", validUntil: "2026-09-23" },
+    { id: 2101, quoteNumber: 2101, customerId: 103, customerName: "EnergiPlus", title: "Kit de refacciones para compresor", responsibleId: "sofia-ramirez", responsibleName: "Sofía Ramírez", serviceMode: "parts", currencyCode: "USD", totalAmount: 96800, estimatedMarginPercent: 38.1, status: "draft", stageKey: "new", stageName: "Nueva oportunidad", updatedAt: "2026-09-12T17:06:00.000Z", validUntil: null },
+    { id: 2087, quoteNumber: 2087, customerId: 104, customerName: "Tractocentro Bajío", title: "Diagnóstico de bomba principal", responsibleId: "sofia-ramirez", responsibleName: "Sofía Ramírez", serviceMode: "field", currencyCode: "MXN", totalAmount: 142750, estimatedMarginPercent: 24.8, status: "pending_approval", stageKey: "diagnosis", stageName: "Diagnóstico", updatedAt: "2026-09-11T15:27:00.000Z", validUntil: "2026-09-18" },
+    { id: 2076, quoteNumber: 2076, customerId: 105, customerName: "Acero Monterrey", title: "Mantenimiento de unidad de potencia", responsibleId: "mariana-ruiz", responsibleName: "Mariana Ruiz", serviceMode: "field", currencyCode: "MXN", totalAmount: 254600, estimatedMarginPercent: 32.4, status: "sent", stageKey: "quoted", stageName: "Oferta enviada", updatedAt: "2026-09-10T20:50:00.000Z", validUntil: "2026-09-20" },
   ],
   opportunities: [
     { id: 1, customerName: "Constructora Garza", title: "Diagnóstico de cargador frontal", serviceMode: "field", estimatedRevenue: 184500, stageId: 1, stageKey: "new", stageName: "Nueva oportunidad", expectedCloseAt: "2026-09-26" },
