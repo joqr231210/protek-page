@@ -6,6 +6,7 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 
 - A single **Ventas** parent entry with sidebar submenu views for Offers, Tablero, and Summary.
 - Offers open in a dedicated detail view. New Offer hides the offer table and metrics, groups commercial fields under **Información General**, and includes **Información técnica** for the operational handoff.
+- **Información General** includes related documents: each attachment has a business-facing name and file metadata, and removing an attachment always requires a confirmation dialog.
 - The offer intake selects an existing customer through a searchable dropdown, requires a service type and currency, and displays monetary inputs with the selected currency prefix and format.
 - A **Clientes** submenu provides inline create and edit flows for company-scoped customer records.
 - The top-level **Ajustes** view exposes a tab for every main module, starting with its module-specific flow, catalog, permission, and automation settings.
@@ -17,6 +18,8 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 - A user can belong to one or more companies. The company switcher only lists active memberships, and every request is scoped to the selected company.
 - RLS policies that isolate every business row by organization membership and module permission. `sales`, `purchases`, `orders`, `quality`, `agent_ai`, `warehouse`, `resources`, `planning`, and `engineering` use `read`, `write`, or `admin` access levels per company.
 - Primary CRUD is inline in the work surface. Popups are reserved for confirmations, destructive operations, and exceptional decisions.
+
+Attachment persistence is intentionally kept separate from the form interaction. The current detail experience manages attachments in the offer workspace; production persistence should use a company-scoped Supabase Storage bucket and a `quote_documents` record tied to the canonical quote once remote schema administration is available.
 
 ## Intentionally not duplicated
 
