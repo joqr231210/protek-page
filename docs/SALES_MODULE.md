@@ -1,0 +1,48 @@
+# Protek Sales Module
+
+The real Protek application now lives in `src/app/sales`. The previous static artifacts remain available as design references; they are not the runtime application.
+
+## What is implemented
+
+- A single **Ventas** parent entry with sidebar submenu views for Offers, CRM, and Summary.
+- Quotes, opportunities, customers, contacts, and assets in a relational Supabase model.
+- A customer-scoped sales pipeline with default stages created when an organization is onboarded.
+- Quote lines with database-calculated subtotal, taxes, total, and estimated margin.
+- Quote intake endpoint that creates a prospect customer when needed, an opportunity, quote, first line, status history, stage history, and an activity event.
+- Authenticated server endpoints using the publishable key and user session. The secret/service key is not used by the application.
+- RLS policies that isolate every business row by organization membership.
+
+## Intentionally not duplicated
+
+There is no `orders` table inside Sales. A quote is the commercial object; after approval it will create the canonical record in the future `Orders` module. Workshop, field, and parts are service modes on the opportunity and quote, not separate sales systems.
+
+## Local setup
+
+1. Copy `.env.example` to `.env.local`.
+2. Set the project URL and publishable key. Do not add the secret key to any `NEXT_PUBLIC_` variable.
+3. Install packages with `npm install`.
+4. Run `npm run dev -- --port 3001` and visit `/sales`.
+
+Without a signed-in organization member, the page presents safe visual demo data. API writes are refused until a real Supabase session is present.
+
+## Applying the schema
+
+The migration is [20260918014800_create_sales_foundation.sql](../supabase/migrations/20260918014800_create_sales_foundation.sql). It has not been applied to the remote project because API keys cannot administer schema changes.
+
+Use a short-lived Supabase personal access token or database password, then run:
+
+```bash
+supabase link --project-ref zdwkjdbjwwxenwmdrzgq
+supabase db push
+supabase db advisors
+```
+
+After the first user signs in, call `public.create_organization(name, slug)` from the authenticated onboarding flow. It creates an owner membership and initializes the commercial pipeline.
+
+## Verification after deployment
+
+1. Confirm every `public` table has RLS enabled with `supabase db advisors`.
+2. Create two organizations and users; verify a user from one cannot read or write the other through the Data API.
+3. Create an offer and confirm the quote totals change only from its quote lines.
+4. Confirm that the new opportunity, quote, activity event, and both history records have the same `organization_id`.
+5. Repeat the above from a `viewer` role and verify writes are denied.
