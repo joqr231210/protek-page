@@ -1,7 +1,12 @@
 import type { SalesOverview } from "./types";
 
 export const demoSalesOverview: SalesOverview = {
+  organizationId: 1,
   organizationName: "Protek Demo MX",
+  organizations: [
+    { id: 1, name: "Protek Demo MX" },
+    { id: 2, name: "Protek Industrial Norte" },
+  ],
   isDemo: true,
   stages: [
     { id: 1, key: "new", name: "Nueva oportunidad", position: 10, probability: 10, isClosed: false, outcome: null },

@@ -4,6 +4,7 @@ import { getSalesContext } from "@/features/sales/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const createQuoteSchema = z.object({
+  organizationId: z.coerce.number().int().positive(),
   customerName: z.string().trim().min(2).max(160),
   title: z.string().trim().min(3).max(220),
   serviceMode: z.enum(["workshop", "field", "parts"]),
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
   const parsed = createQuoteSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Review the required quote fields." }, { status: 400 });
 
-  const context = await getSalesContext(supabase);
+  const context = await getSalesContext(supabase, parsed.data.organizationId);
   if (!context) return NextResponse.json({ error: "Sign in and select an active organization." }, { status: 401 });
 
   const { data: pipeline } = await supabase

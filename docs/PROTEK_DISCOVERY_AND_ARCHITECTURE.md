@@ -133,11 +133,11 @@ The three service modes should use one core work-order domain with different req
 | --- | --- |
 | `profiles` | application profile keyed to `auth.users.id` |
 | `organizations` | Protek tenant/company |
-| `organization_members` | membership, status, branch context |
-| `roles`, `permissions`, `role_permissions` | RBAC independent of job title |
+| `organization_members` | membership, status, and branch context; one user can have one row in each company they can access |
+| `organization_member_module_permissions` | per-company module access for `sales`, `purchases`, `orders`, `quality`, `agent_ai`, `warehouse`, `resources`, `planning`, and `engineering`; levels are `read`, `write`, and `admin` |
 | `branches`, `organization_locations` | offices, workshop sites, legal/operational context |
 
-An `organization_members` row is the access boundary. Tenant tables carry `organization_id`; RLS policies verify current membership and role capability. The service-role key remains server-only for migration, scheduled administration, and tightly audited privileged operations.
+An `organization_members` row is the access boundary. A user can be active in several companies, but the application always operates with one explicit active company selected below the Protek logo. Every tenant table, including orders, warehouses, customers, purchase orders, products, engineering files, and quality records, carries `organization_id`. RLS first verifies active membership and then the relevant module level (`read`, `write`, or `admin`). Owners and company administrators receive administrative access across modules. The service-role key remains server-only for migration, scheduled administration, and tightly audited privileged operations.
 
 ### Customers and assets
 
@@ -308,7 +308,9 @@ Initial workflow candidates:
 
 **Outcome:** the broader Protek SaaS model is ready.
 
-- CRM pipeline and profitability dashboard.
+- Tablero comercial and profitability dashboard.
+- Planning projects with dates, dependencies, and actions that can create purchasing, quality, and engineering work.
+- Resources for people and key operating machinery/equipment, plus Engineering plans, notes, and controlled files.
 - Advanced inventory, customer portal, mobile technician workflows, integrations, and tenant self-service.
 - Usage analytics, billing, onboarding, and multi-tenant operations once core data isolation is proven.
 

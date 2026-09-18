@@ -38,7 +38,9 @@ export type Opportunity = {
 };
 
 export type SalesOverview = {
+  organizationId: number;
   organizationName: string;
+  organizations: Array<{ id: number; name: string }>;
   isDemo: boolean;
   stages: Stage[];
   quotes: Quote[];

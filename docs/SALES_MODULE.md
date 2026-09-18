@@ -4,13 +4,15 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 
 ## What is implemented
 
-- A single **Ventas** parent entry with sidebar submenu views for Offers, CRM, and Summary.
+- A single **Ventas** parent entry with sidebar submenu views for Offers, Tablero, and Summary.
 - Quotes, opportunities, customers, contacts, and assets in a relational Supabase model.
 - A customer-scoped sales pipeline with default stages created when an organization is onboarded.
 - Quote lines with database-calculated subtotal, taxes, total, and estimated margin.
 - Quote intake endpoint that creates a prospect customer when needed, an opportunity, quote, first line, status history, stage history, and an activity event.
 - Authenticated server endpoints using the publishable key and user session. The secret/service key is not used by the application.
-- RLS policies that isolate every business row by organization membership.
+- A user can belong to one or more companies. The company switcher only lists active memberships, and every request is scoped to the selected company.
+- RLS policies that isolate every business row by organization membership and module permission. `sales`, `purchases`, `orders`, `quality`, `agent_ai`, `warehouse`, `resources`, `planning`, and `engineering` use `read`, `write`, or `admin` access levels per company.
+- Primary CRUD is inline in the work surface. Popups are reserved for confirmations, destructive operations, and exceptional decisions.
 
 ## Intentionally not duplicated
 
@@ -45,4 +47,5 @@ After the first user signs in, call `public.create_organization(name, slug)` fro
 2. Create two organizations and users; verify a user from one cannot read or write the other through the Data API.
 3. Create an offer and confirm the quote totals change only from its quote lines.
 4. Confirm that the new opportunity, quote, activity event, and both history records have the same `organization_id`.
-5. Repeat the above from a `viewer` role and verify writes are denied.
+5. Add the same user to two companies and confirm switching companies cannot expose cross-company records.
+6. Repeat the above with `read` sales permission and verify writes are denied; repeat with `write` and verify pipeline configuration still requires `admin`.

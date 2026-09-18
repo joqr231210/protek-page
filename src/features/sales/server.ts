@@ -11,27 +11,37 @@ function asString(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-export async function getSalesOverview(supabase: SupabaseClient): Promise<SalesOverview | null> {
+export async function getSalesOverview(supabase: SupabaseClient, requestedOrganizationId?: number): Promise<SalesOverview | null> {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) return null;
 
-  const { data: membership, error: membershipError } = await supabase
+  const { data: memberships, error: membershipError } = await supabase
     .from("organization_members")
     .select("organization_id, organizations(name)")
     .eq("user_id", authData.user.id)
     .eq("status", "active")
-    .limit(1)
-    .maybeSingle();
+    .order("organization_id");
 
-  if (membershipError || !membership) return null;
+  if (membershipError || !memberships?.length) return null;
 
-  const organizationId = asNumber(membership.organization_id);
-  const organization = Array.isArray(membership.organizations)
-    ? membership.organizations[0]
-    : membership.organizations;
-  const organizationName = organization && typeof organization === "object" && "name" in organization
-    ? asString(organization.name)
-    : "Protek";
+  const organizations = (memberships as DatabaseRow[]).map((membership) => {
+    const organization = Array.isArray(membership.organizations)
+      ? membership.organizations[0]
+      : membership.organizations;
+    return {
+      id: asNumber(membership.organization_id),
+      name: organization && typeof organization === "object" && "name" in organization
+        ? asString(organization.name)
+        : "Empresa sin nombre",
+    };
+  });
+  const selectedOrganization = requestedOrganizationId
+    ? organizations.find((organization) => organization.id === requestedOrganizationId)
+    : organizations[0];
+  if (!selectedOrganization) return null;
+
+  const organizationId = selectedOrganization.id;
+  const organizationName = selectedOrganization.name;
 
   const [stagesResult, customersResult, opportunitiesResult, quotesResult] = await Promise.all([
     supabase
@@ -108,20 +118,21 @@ export async function getSalesOverview(supabase: SupabaseClient): Promise<SalesO
     };
   });
 
-  return { organizationName, isDemo: false, stages, quotes, opportunities };
+  return { organizationId, organizationName, organizations, isDemo: false, stages, quotes, opportunities };
 }
 
-export async function getSalesContext(supabase: SupabaseClient) {
+export async function getSalesContext(supabase: SupabaseClient, requestedOrganizationId?: number) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) return null;
 
-  const { data: membership } = await supabase
+  let membershipQuery = supabase
     .from("organization_members")
     .select("organization_id")
     .eq("user_id", authData.user.id)
-    .eq("status", "active")
-    .limit(1)
-    .maybeSingle();
+    .eq("status", "active");
+  if (requestedOrganizationId) membershipQuery = membershipQuery.eq("organization_id", requestedOrganizationId);
+
+  const { data: membership } = await membershipQuery.limit(1).maybeSingle();
 
   return membership ? { organizationId: asNumber(membership.organization_id), userId: authData.user.id } : null;
 }

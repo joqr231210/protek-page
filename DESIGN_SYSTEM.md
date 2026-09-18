@@ -28,8 +28,14 @@ La escala de espacio base usa múltiplos de 8 px: 8, 16, 24, 32 y 48.
 ## Patrones de ventas
 
 1. **Ofertas:** tabla para exploración, panel lateral para decidir y dar seguimiento.
-2. **CRM:** columnas por etapa, valor agregado de cada etapa y tarjetas con importe, cliente y responsable.
+2. **Tablero:** columnas por etapa, valor agregado de cada etapa y tarjetas con importe, cliente y responsable.
 3. **Resumen:** métricas primero; después pipeline, embudo, margen y desempeño del equipo.
+
+## Patrones de interacción
+
+- Los CRUD principales se resuelven dentro de la vista de trabajo: alta de una oferta, edición de datos y cambios de estado se muestran en línea, conservando el contexto de la tabla o tablero.
+- Los modales emergentes se reservan principalmente para confirmar acciones destructivas, irreversibles o que afecten registros relacionados. No se usan como el camino habitual para capturar datos.
+- El selector debajo del logotipo establece la empresa activa. Toda lista, alta y acción se limita a esa empresa y a los permisos del usuario en ella.
 
 ## Accesibilidad
 

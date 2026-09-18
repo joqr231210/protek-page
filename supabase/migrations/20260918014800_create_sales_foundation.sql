@@ -25,11 +25,25 @@ create table public.organization_members (
   id bigint generated always as identity primary key,
   organization_id bigint not null references public.organizations (id) on delete cascade,
   user_id uuid not null references auth.users (id) on delete cascade,
-  role text not null check (role in ('owner', 'admin', 'sales_manager', 'sales_rep', 'technician', 'purchasing', 'quality', 'viewer')),
+  role text not null default 'member' check (role in ('owner', 'admin', 'member', 'viewer')),
   status text not null default 'active' check (status in ('invited', 'active', 'suspended')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (organization_id, user_id)
+  unique (organization_id, user_id),
+  unique (id, organization_id)
+);
+
+create table public.organization_member_module_permissions (
+  id bigint generated always as identity primary key,
+  organization_id bigint not null references public.organizations (id) on delete cascade,
+  organization_member_id bigint not null,
+  module_key text not null check (module_key in ('sales', 'purchases', 'orders', 'quality', 'agent_ai', 'warehouse', 'resources', 'planning', 'engineering')),
+  access_level text not null check (access_level in ('read', 'write', 'admin')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_member_id, module_key),
+  foreign key (organization_member_id, organization_id)
+    references public.organization_members (id, organization_id) on delete cascade
 );
 
 create table public.sales_pipelines (
@@ -239,6 +253,8 @@ create table public.activity_events (
 
 create index organization_members_user_id_idx on public.organization_members (user_id);
 create index organization_members_org_role_idx on public.organization_members (organization_id, role) where status = 'active';
+create index organization_member_module_permissions_org_member_idx on public.organization_member_module_permissions (organization_id, organization_member_id);
+create index organization_member_module_permissions_module_idx on public.organization_member_module_permissions (organization_id, module_key, access_level);
 create index sales_pipelines_organization_id_idx on public.sales_pipelines (organization_id) where archived_at is null;
 create unique index sales_pipelines_one_default_idx on public.sales_pipelines (organization_id) where is_default and archived_at is null;
 create index pipeline_stages_organization_id_idx on public.pipeline_stages (organization_id, pipeline_id, position);
@@ -292,7 +308,11 @@ as $$
   );
 $$;
 
-create function private.can_write_sales(p_organization_id bigint)
+create function private.has_module_access(
+  p_organization_id bigint,
+  p_module_key text,
+  p_minimum_level text default 'read'
+)
 returns boolean
 language sql
 security definer
@@ -305,16 +325,30 @@ as $$
     where member.organization_id = p_organization_id
       and member.user_id = (select auth.uid())
       and member.status = 'active'
-      and member.role in ('owner', 'admin', 'sales_manager', 'sales_rep')
+      and (
+        member.role in ('owner', 'admin')
+        or exists (
+          select 1
+          from public.organization_member_module_permissions permission
+          where permission.organization_member_id = member.id
+            and permission.organization_id = p_organization_id
+            and permission.module_key = p_module_key
+            and (
+              permission.access_level = 'admin'
+              or (p_minimum_level = 'read' and permission.access_level in ('read', 'write'))
+              or (p_minimum_level = 'write' and permission.access_level = 'write')
+            )
+        )
+      )
   );
 $$;
 
 revoke all on function private.has_organization_access(bigint) from public, anon;
 revoke all on function private.can_manage_organization(bigint) from public, anon;
-revoke all on function private.can_write_sales(bigint) from public, anon;
+revoke all on function private.has_module_access(bigint, text, text) from public, anon;
 grant execute on function private.has_organization_access(bigint) to authenticated;
 grant execute on function private.can_manage_organization(bigint) to authenticated;
-grant execute on function private.can_write_sales(bigint) to authenticated;
+grant execute on function private.has_module_access(bigint, text, text) to authenticated;
 
 create function private.touch_updated_at()
 returns trigger
@@ -402,6 +436,32 @@ begin
 end;
 $$;
 
+create function private.seed_member_module_permissions()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.role in ('owner', 'admin') then
+    insert into public.organization_member_module_permissions (
+      organization_id,
+      organization_member_id,
+      module_key,
+      access_level
+    )
+    select new.organization_id, new.id, module_key, 'admin'
+    from (values
+      ('sales'), ('purchases'), ('orders'), ('quality'), ('agent_ai'),
+      ('warehouse'), ('resources'), ('planning'), ('engineering')
+    ) as modules(module_key)
+    on conflict (organization_member_id, module_key) do nothing;
+  end if;
+
+  return new;
+end;
+$$;
+
 create function private.handle_new_user()
 returns trigger
 language plpgsql
@@ -448,6 +508,7 @@ revoke all on function private.touch_updated_at() from public, anon, authenticat
 revoke all on function private.touch_audited_updated_at() from public, anon, authenticated;
 revoke all on function private.refresh_quote_totals() from public, anon, authenticated;
 revoke all on function private.seed_sales_pipeline() from public, anon, authenticated;
+revoke all on function private.seed_member_module_permissions() from public, anon, authenticated;
 revoke all on function private.handle_new_user() from public, anon, authenticated;
 revoke all on function public.create_organization(text, text) from public, anon;
 grant execute on function public.create_organization(text, text) to authenticated;
@@ -464,6 +525,9 @@ before update on public.organizations
 for each row execute function private.touch_updated_at();
 create trigger set_organization_members_updated_at
 before update on public.organization_members
+for each row execute function private.touch_updated_at();
+create trigger set_organization_member_module_permissions_updated_at
+before update on public.organization_member_module_permissions
 for each row execute function private.touch_updated_at();
 create trigger set_sales_pipelines_updated_at
 before update on public.sales_pipelines
@@ -495,6 +559,9 @@ for each row execute function private.refresh_quote_totals();
 create trigger create_default_sales_pipeline
 after insert on public.organizations
 for each row execute function private.seed_sales_pipeline();
+create trigger seed_organization_member_module_permissions
+after insert on public.organization_members
+for each row execute function private.seed_member_module_permissions();
 create trigger create_profile_for_auth_user
 after insert on auth.users
 for each row execute function private.handle_new_user();
@@ -502,6 +569,7 @@ for each row execute function private.handle_new_user();
 alter table public.profiles enable row level security;
 alter table public.organizations enable row level security;
 alter table public.organization_members enable row level security;
+alter table public.organization_member_module_permissions enable row level security;
 alter table public.sales_pipelines enable row level security;
 alter table public.pipeline_stages enable row level security;
 alter table public.customers enable row level security;
@@ -514,11 +582,11 @@ alter table public.quote_lines enable row level security;
 alter table public.quote_status_history enable row level security;
 alter table public.activity_events enable row level security;
 
-revoke all on table public.profiles, public.organizations, public.organization_members,
+revoke all on table public.profiles, public.organizations, public.organization_members, public.organization_member_module_permissions,
   public.sales_pipelines, public.pipeline_stages, public.customers, public.customer_contacts,
   public.assets, public.sales_opportunities, public.opportunity_stage_history, public.quotes,
   public.quote_lines, public.quote_status_history, public.activity_events from anon;
-grant select, insert, update, delete on table public.profiles, public.organizations, public.organization_members,
+grant select, insert, update, delete on table public.profiles, public.organizations, public.organization_members, public.organization_member_module_permissions,
   public.sales_pipelines, public.pipeline_stages, public.customers, public.customer_contacts,
   public.assets, public.sales_opportunities, public.opportunity_stage_history, public.quotes,
   public.quote_lines, public.quote_status_history, public.activity_events to authenticated;
@@ -543,91 +611,100 @@ create policy "organization_members_update_manager" on public.organization_membe
 create policy "organization_members_delete_manager" on public.organization_members for delete to authenticated
   using ((select private.can_manage_organization(organization_id)));
 
-create policy "sales_pipelines_select_member" on public.sales_pipelines for select to authenticated
+create policy "member_permissions_select_member" on public.organization_member_module_permissions for select to authenticated
   using ((select private.has_organization_access(organization_id)));
-create policy "sales_pipelines_insert_manager" on public.sales_pipelines for insert to authenticated
+create policy "member_permissions_insert_manager" on public.organization_member_module_permissions for insert to authenticated
   with check ((select private.can_manage_organization(organization_id)));
-create policy "sales_pipelines_update_manager" on public.sales_pipelines for update to authenticated
+create policy "member_permissions_update_manager" on public.organization_member_module_permissions for update to authenticated
   using ((select private.can_manage_organization(organization_id))) with check ((select private.can_manage_organization(organization_id)));
-create policy "sales_pipelines_delete_manager" on public.sales_pipelines for delete to authenticated
+create policy "member_permissions_delete_manager" on public.organization_member_module_permissions for delete to authenticated
   using ((select private.can_manage_organization(organization_id)));
+
+create policy "sales_pipelines_select_member" on public.sales_pipelines for select to authenticated
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
+create policy "sales_pipelines_insert_manager" on public.sales_pipelines for insert to authenticated
+  with check ((select private.has_module_access(organization_id, 'sales', 'admin')));
+create policy "sales_pipelines_update_manager" on public.sales_pipelines for update to authenticated
+  using ((select private.has_module_access(organization_id, 'sales', 'admin'))) with check ((select private.has_module_access(organization_id, 'sales', 'admin')));
+create policy "sales_pipelines_delete_manager" on public.sales_pipelines for delete to authenticated
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "pipeline_stages_select_member" on public.pipeline_stages for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "pipeline_stages_insert_manager" on public.pipeline_stages for insert to authenticated
-  with check ((select private.can_manage_organization(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'admin')));
 create policy "pipeline_stages_update_manager" on public.pipeline_stages for update to authenticated
-  using ((select private.can_manage_organization(organization_id))) with check ((select private.can_manage_organization(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin'))) with check ((select private.has_module_access(organization_id, 'sales', 'admin')));
 create policy "pipeline_stages_delete_manager" on public.pipeline_stages for delete to authenticated
-  using ((select private.can_manage_organization(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "customers_select_member" on public.customers for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "customers_insert_sales" on public.customers for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "customers_update_sales" on public.customers for update to authenticated
-  using ((select private.can_write_sales(organization_id))) with check ((select private.can_write_sales(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'write'))) with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "customers_delete_manager" on public.customers for delete to authenticated
-  using ((select private.can_manage_organization(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "customer_contacts_select_member" on public.customer_contacts for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "customer_contacts_insert_sales" on public.customer_contacts for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "customer_contacts_update_sales" on public.customer_contacts for update to authenticated
-  using ((select private.can_write_sales(organization_id))) with check ((select private.can_write_sales(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'write'))) with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "customer_contacts_delete_manager" on public.customer_contacts for delete to authenticated
-  using ((select private.can_manage_organization(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "assets_select_member" on public.assets for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "assets_insert_sales" on public.assets for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "assets_update_sales" on public.assets for update to authenticated
-  using ((select private.can_write_sales(organization_id))) with check ((select private.can_write_sales(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'write'))) with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "assets_delete_manager" on public.assets for delete to authenticated
-  using ((select private.can_manage_organization(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "opportunities_select_member" on public.sales_opportunities for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "opportunities_insert_sales" on public.sales_opportunities for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "opportunities_update_sales" on public.sales_opportunities for update to authenticated
-  using ((select private.can_write_sales(organization_id))) with check ((select private.can_write_sales(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'write'))) with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "opportunities_delete_manager" on public.sales_opportunities for delete to authenticated
-  using ((select private.can_manage_organization(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "opportunity_history_select_member" on public.opportunity_stage_history for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "opportunity_history_insert_sales" on public.opportunity_stage_history for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 
 create policy "quotes_select_member" on public.quotes for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "quotes_insert_sales" on public.quotes for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "quotes_update_sales" on public.quotes for update to authenticated
-  using ((select private.can_write_sales(organization_id))) with check ((select private.can_write_sales(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'write'))) with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "quotes_delete_manager" on public.quotes for delete to authenticated
-  using ((select private.can_manage_organization(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "quote_lines_select_member" on public.quote_lines for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "quote_lines_insert_sales" on public.quote_lines for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "quote_lines_update_sales" on public.quote_lines for update to authenticated
-  using ((select private.can_write_sales(organization_id))) with check ((select private.can_write_sales(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'write'))) with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 create policy "quote_lines_delete_sales" on public.quote_lines for delete to authenticated
-  using ((select private.can_write_sales(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'admin')));
 
 create policy "quote_history_select_member" on public.quote_status_history for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "quote_history_insert_sales" on public.quote_status_history for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 
 create policy "activity_events_select_member" on public.activity_events for select to authenticated
-  using ((select private.has_organization_access(organization_id)));
+  using ((select private.has_module_access(organization_id, 'sales', 'read')));
 create policy "activity_events_insert_sales" on public.activity_events for insert to authenticated
-  with check ((select private.can_write_sales(organization_id)));
+  with check ((select private.has_module_access(organization_id, 'sales', 'write')));
 
 commit;

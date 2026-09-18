@@ -22,11 +22,10 @@ import {
   ShieldCheck,
   ShoppingCart,
   SlidersHorizontal,
-  X,
 } from "lucide-react";
 import type { Quote, SalesOverview, ServiceMode } from "./types";
 
-type View = "offers" | "crm" | "summary";
+type View = "offers" | "board" | "summary";
 
 const currency = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -76,7 +75,8 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
   const [view, setView] = useState<View>("offers");
   const [selectedQuoteId, setSelectedQuoteId] = useState(initialOverview.quotes[0]?.id ?? 0);
   const [search, setSearch] = useState("");
-  const [showNewQuote, setShowNewQuote] = useState(false);
+  const [isCreatingQuote, setIsCreatingQuote] = useState(false);
+  const [showCompanyMenu, setShowCompanyMenu] = useState(false);
   const [toast, setToast] = useState("");
 
   const filteredQuotes = useMemo(() => {
@@ -107,6 +107,7 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
 
   async function createQuote(form: FormData) {
     const payload = {
+      organizationId: overview.organizationId,
       customerName: String(form.get("customerName") ?? ""),
       title: String(form.get("title") ?? ""),
       serviceMode: String(form.get("serviceMode") ?? "workshop"),
@@ -142,29 +143,62 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
     };
     setOverview((current) => ({ ...current, quotes: [newQuote, ...current.quotes] }));
     setSelectedQuoteId(newQuote.id);
-    setShowNewQuote(false);
+    setIsCreatingQuote(false);
     setView("offers");
     notify(`Oferta Q-${created.quoteNumber} creada.`);
+  }
+
+  async function selectOrganization(organizationId: number) {
+    if (organizationId === overview.organizationId) {
+      setShowCompanyMenu(false);
+      return;
+    }
+
+    const selectedOrganization = overview.organizations.find((organization) => organization.id === organizationId);
+    if (!selectedOrganization) return;
+
+    if (overview.isDemo) {
+      setOverview((current) => ({ ...current, organizationId, organizationName: selectedOrganization.name }));
+      setShowCompanyMenu(false);
+      setSelectedQuoteId(overview.quotes[0]?.id ?? 0);
+      notify(`${selectedOrganization.name} es ahora la empresa activa.`);
+      return;
+    }
+
+    const response = await fetch(`/api/sales/overview?organizationId=${organizationId}`, { cache: "no-store" });
+    if (!response.ok) {
+      notify("No fue posible cambiar de empresa. Inténtalo otra vez.");
+      return;
+    }
+
+    const nextOverview = await response.json() as SalesOverview;
+    setOverview(nextOverview);
+    setSelectedQuoteId(nextOverview.quotes[0]?.id ?? 0);
+    setSearch("");
+    setIsCreatingQuote(false);
+    setShowCompanyMenu(false);
+    notify(`${nextOverview.organizationName} es ahora la empresa activa.`);
   }
 
   return (
     <div className="protek-shell">
       <aside className="sidebar" aria-label="Navegación principal">
         <a className="wordmark" href="/sales" aria-label="Protek Industrial"><span />protek</a>
-        <button className="workspace-switch" type="button"><BriefcaseBusiness size={16} /><span>{overview.organizationName}</span><ChevronDown size={14} /></button>
+        <div className="workspace-selector">
+          <button className="workspace-switch" type="button" aria-haspopup="menu" aria-expanded={showCompanyMenu} onClick={() => setShowCompanyMenu((isOpen) => !isOpen)}><BriefcaseBusiness size={16} /><span>{overview.organizationName}</span><ChevronDown size={14} /></button>
+          {showCompanyMenu && <div className="company-menu" role="menu" aria-label="Cambiar empresa">
+            {overview.organizations.map((organization) => <button className={organization.id === overview.organizationId ? "is-active" : ""} key={organization.id} role="menuitem" type="button" onClick={() => void selectOrganization(organization.id)}><span>{organization.name}</span>{organization.id === overview.organizationId && <b>Activa</b>}</button>)}
+          </div>}
+        </div>
         <nav className="side-nav">
-          <p>OPERACIÓN</p>
           <a href="#inicio"><LayoutDashboard size={16} />Inicio</a>
           <a href="#ordenes"><ClipboardList size={16} />Órdenes <b>12</b></a>
-          <a href="#tecnicos"><HardHat size={16} />Técnicos</a>
-          <a href="#almacen"><Package size={16} />Almacén</a>
-          <p>COMERCIAL</p>
           <div className="nav-group">
             <a className="is-current" href="#ventas"><BriefcaseBusiness size={16} />Ventas <ChevronDown size={14} /></a>
             <div className="sales-submenu" aria-label="Secciones de Ventas">
               {([
                 ["offers", FileText, "Ofertas"],
-                ["crm", Columns3, "CRM"],
+                ["board", Columns3, "Tablero"],
                 ["summary", LineChart, "Resumen"],
               ] as const).map(([key, Icon, label]) => (
                 <button className={view === key ? "is-active" : ""} key={key} type="button" onClick={() => setView(key)}>
@@ -173,9 +207,12 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
               ))}
             </div>
           </div>
+          <a href="#planeacion"><CalendarDays size={16} />Planeación</a>
+          <a href="#recursos"><HardHat size={16} />Recursos</a>
+          <a href="#almacen"><Package size={16} />Almacén</a>
           <a href="#compras"><ShoppingCart size={16} />Compras</a>
-          <p>SISTEMA</p>
           <a href="#calidad"><ShieldCheck size={16} />Calidad</a>
+          <a href="#ingenieria"><FileText size={16} />Ingeniería</a>
           <a href="#agente"><Bot size={16} />Agente IA <i /></a>
         </nav>
         <div className="sidebar-account"><span>MR</span><div><b>Mariana Ruiz</b><small>Dirección comercial</small></div></div>
@@ -183,13 +220,13 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
 
       <main className="sales-main">
         <header className="topbar">
-          <div className="breadcrumb"><span>Ventas</span><ChevronRight size={13} /><strong>{view === "offers" ? "Ofertas" : view === "crm" ? "CRM" : "Resumen"}</strong></div>
+          <div className="breadcrumb"><span>Ventas</span><ChevronRight size={13} /><strong>{view === "offers" ? "Ofertas" : view === "board" ? "Tablero" : "Resumen"}</strong></div>
           <div className="topbar-actions"><button className="icon-button" type="button" aria-label="Buscar"><Search size={17} /></button><button className="icon-button alert" type="button" aria-label="Notificaciones"><Bell size={17} /></button><button className="period-button" type="button"><CalendarDays size={14} />Septiembre 2026<ChevronDown size={12} /></button></div>
         </header>
 
         <div className="page-heading">
-          <div><p className="eyebrow">MÓDULO / VENTAS</p><h1>{view === "offers" ? "Ofertas" : view === "crm" ? "CRM comercial" : "Resumen comercial"}</h1><p>{view === "offers" ? "Convierte oportunidades de servicio y refacciones en trabajo rentable." : view === "crm" ? "Visibilidad del pipeline, sin separar los datos del trabajo que se cotiza." : "Resultados, conversión y margen para decidir el siguiente movimiento."}</p></div>
-          <button className="primary-button" type="button" onClick={() => setShowNewQuote(true)}><Plus size={16} />Nueva oferta</button>
+          <div><p className="eyebrow">MÓDULO / VENTAS</p><h1>{view === "offers" ? "Ofertas" : view === "board" ? "Tablero comercial" : "Resumen comercial"}</h1><p>{view === "offers" ? "Convierte oportunidades de servicio y refacciones en trabajo rentable." : view === "board" ? "Visibilidad del pipeline, sin separar los datos del trabajo que se cotiza." : "Resultados, conversión y margen para decidir el siguiente movimiento."}</p></div>
+          <button className="primary-button" type="button" onClick={() => { setView("offers"); setIsCreatingQuote(true); }}><Plus size={16} />Nueva oferta</button>
         </div>
 
         {view === "offers" && <section className="view-section">
@@ -199,6 +236,7 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
             <Metric label="MARGEN ESTIMADO" value={`${averageMargin.toFixed(1)}%`} note="Sobre ofertas abiertas" neutral />
             <Metric label="POR VENCER" value={String(expiring)} note="Próximos 7 días" risk />
           </div>
+          {isCreatingQuote && <InlineQuoteEditor onCancel={() => setIsCreatingQuote(false)} onSubmit={createQuote} />}
           <div className="offers-workspace">
             <div className="data-surface">
               <div className="surface-toolbar"><div className="filter-group"><button className="filter-button" type="button"><SlidersHorizontal size={14} />Todos los estados<ChevronDown size={12} /></button></div><label className="search-field"><Search size={15} /><span className="sr-only">Buscar ofertas</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar oferta" /></label></div>
@@ -214,7 +252,7 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
           </div>
         </section>}
 
-        {view === "crm" && <section className="view-section">
+        {view === "board" && <section className="view-section">
           <div className="crm-head"><div><strong>{overview.opportunities.filter((opportunity) => opportunity.stageKey !== "won" && opportunity.stageKey !== "lost").length} oportunidades activas</strong><span>Actualizado desde el backend comercial</span></div><button className="filter-button" type="button"><SlidersHorizontal size={14} />Filtros</button></div>
           <div className="kanban">
             {overview.stages.filter((stage) => stage.outcome !== "lost").map((stage) => {
@@ -231,7 +269,6 @@ export function SalesWorkspace({ initialOverview }: { initialOverview: SalesOver
         </section>}
       </main>
 
-      {showNewQuote && <NewQuoteModal onClose={() => setShowNewQuote(false)} onSubmit={createQuote} />}
       <div className={`toast ${toast ? "is-visible" : ""}`} role="status">{toast}</div>
     </div>
   );
@@ -250,7 +287,7 @@ function OfferInspector({ quote, onOpen }: { quote: Quote; onOpen: () => void })
   return <aside className="offer-inspector"><header><div><span>OFERTA SELECCIONADA</span><h2>Q-{quote.quoteNumber}</h2></div><Box size={17} /></header><div className="customer-block"><i>{initials(quote.customerName)}</i><div><b>{quote.customerName}</b><small>{quote.title}</small></div></div><div className="progress"><div><span>PROGRESO COMERCIAL</span><strong>{progress}%</strong></div><i><b style={{ width: `${progress}%` }} /></i><small><em>Diagnóstico</em><em>Propuesta</em><em>Enviada</em><em>Negociación</em><em>Cierre</em></small></div><dl><div><dt>Importe</dt><dd>{currency.format(quote.totalAmount)}</dd></div><div><dt>Margen estimado</dt><dd className={quote.estimatedMarginPercent !== null && quote.estimatedMarginPercent < 28 ? "margin-risk" : "margin-good"}>{quote.estimatedMarginPercent?.toFixed(1) ?? "-"}%</dd></div><div><dt>Etapa</dt><dd>{quote.stageName}</dd></div><div><dt>Vigencia</dt><dd>{quote.validUntil ?? "Sin definir"}</dd></div></dl><div className="inspector-actions"><button className="primary-button" type="button" onClick={onOpen}>Abrir oferta <ArrowRight size={14} /></button><button className="secondary-button" type="button">Registrar actividad</button></div><div className="activity"><span>ÚLTIMA ACTIVIDAD</span><p><b>Oferta actualizada</b><small>{relativeDate(quote.updatedAt)} · por Mariana Ruiz</small></p><p><b>Margen calculado desde partidas</b><small>Los importes se controlan en el backend</small></p></div></aside>;
 }
 
-function NewQuoteModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (form: FormData) => Promise<void> }) {
+function InlineQuoteEditor({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (form: FormData) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -258,5 +295,5 @@ function NewQuoteModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
     await onSubmit(new FormData(event.currentTarget));
     setSaving(false);
   }
-  return <div className="modal-backdrop" role="presentation"><form className="quote-modal" onSubmit={submit}><header><div><span>NUEVA OFERTA</span><h2>Inicia una oportunidad</h2></div><button className="icon-button" type="button" aria-label="Cerrar" onClick={onClose}><X size={17} /></button></header><div className="form-grid"><label>Cliente<input name="customerName" required placeholder="Empresa cliente" /></label><label>Tipo de servicio<select name="serviceMode" defaultValue="workshop"><option value="workshop">Servicio en taller</option><option value="field">Servicio en campo</option><option value="parts">Refaccionamiento</option></select></label><label className="wide">Nombre de la oferta<input name="title" required placeholder="Ej. Overhaul de cilindro hidráulico" /></label><label>Venta estimada<input name="estimatedRevenue" required type="number" min="0" step="0.01" placeholder="0.00" /></label><label>Costo estimado<input name="estimatedCost" required type="number" min="0" step="0.01" placeholder="0.00" /></label><label className="wide">Vigencia<input name="validUntil" type="date" /></label></div><footer><button className="secondary-button" type="button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={saving} type="submit">{saving ? "Creando..." : "Crear oferta"}<ArrowRight size={15} /></button></footer></form></div>;
+  return <form className="inline-quote-editor" onSubmit={submit}><header><div><span>NUEVA OFERTA</span><h2>Inicia una oportunidad</h2></div><p>El borrador queda vinculado a {" "}<b>la empresa activa</b>.</p></header><div className="form-grid"><label>Cliente<input name="customerName" required placeholder="Empresa cliente" /></label><label>Tipo de servicio<select name="serviceMode" defaultValue="workshop"><option value="workshop">Servicio en taller</option><option value="field">Servicio en campo</option><option value="parts">Refaccionamiento</option></select></label><label className="wide">Nombre de la oferta<input name="title" required placeholder="Ej. Overhaul de cilindro hidráulico" /></label><label>Venta estimada<input name="estimatedRevenue" required type="number" min="0" step="0.01" placeholder="0.00" /></label><label>Costo estimado<input name="estimatedCost" required type="number" min="0" step="0.01" placeholder="0.00" /></label><label className="wide">Vigencia<input name="validUntil" type="date" /></label></div><footer><button className="secondary-button" type="button" onClick={onCancel}>Cancelar</button><button className="primary-button" disabled={saving} type="submit">{saving ? "Creando..." : "Crear oferta"}<ArrowRight size={15} /></button></footer></form>;
 }
