@@ -21,6 +21,7 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 - A user can belong to one or more companies. The company switcher only lists active memberships, and every request is scoped to the selected company.
 - RLS policies that isolate every business row by organization membership and module permission. `sales`, `purchases`, `orders`, `quality`, `agent_ai`, `warehouse`, `resources`, `planning`, and `engineering` use `read`, `write`, or `admin` access levels per company.
 - Primary CRUD is inline in the work surface. Popups are reserved for confirmations, destructive operations, and exceptional decisions.
+- The design system uses 12 px as its minimum text size. Supporting text, labels, table metadata, and controls do not fall below this baseline.
 
 Attachment persistence is intentionally kept separate from the form interaction. The current detail experience manages attachments in the offer workspace; production persistence should use a company-scoped Supabase Storage bucket and a `quote_documents` record tied to the canonical quote once remote schema administration is available.
 
