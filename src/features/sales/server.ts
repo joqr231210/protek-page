@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Opportunity, Quote, SalesOverview, Stage } from "./types";
+import type { Customer, Opportunity, Quote, SalesOverview, Stage } from "./types";
 
 type DatabaseRow = Record<string, unknown>;
 
@@ -51,7 +51,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
       .order("position"),
     supabase
       .from("customers")
-      .select("id, display_name")
+      .select("id, display_name, legal_name, tax_id, account_code, status")
       .eq("organization_id", organizationId)
       .is("archived_at", null),
     supabase
@@ -62,7 +62,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
       .order("updated_at", { ascending: false }),
     supabase
       .from("quotes")
-      .select("id, quote_number, customer_id, opportunity_id, title, service_mode, total_amount, estimated_margin_percent, status, updated_at, valid_until")
+      .select("id, quote_number, customer_id, opportunity_id, title, service_mode, currency_code, total_amount, estimated_margin_percent, status, updated_at, valid_until")
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("updated_at", { ascending: false }),
@@ -82,9 +82,15 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
     outcome: row.outcome === "won" || row.outcome === "lost" ? row.outcome : null,
   }));
   const stageById = new Map(stages.map((stage) => [stage.id, stage]));
-  const customerNameById = new Map(
-    (customersResult.data as DatabaseRow[]).map((row) => [asNumber(row.id), asString(row.display_name)]),
-  );
+  const customers: Customer[] = (customersResult.data as DatabaseRow[]).map((row) => ({
+    id: asNumber(row.id),
+    displayName: asString(row.display_name),
+    legalName: typeof row.legal_name === "string" ? row.legal_name : null,
+    taxId: typeof row.tax_id === "string" ? row.tax_id : null,
+    accountCode: typeof row.account_code === "string" ? row.account_code : null,
+    status: row.status === "active" || row.status === "inactive" || row.status === "prospect" ? row.status : "prospect",
+  }));
+  const customerNameById = new Map(customers.map((customer) => [customer.id, customer.displayName]));
   const opportunities: Opportunity[] = (opportunitiesResult.data as DatabaseRow[]).map((row) => {
     const stage = stageById.get(asNumber(row.stage_id));
     return {
@@ -105,9 +111,11 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
     return {
       id: asNumber(row.id),
       quoteNumber: asNumber(row.quote_number),
+      customerId: asNumber(row.customer_id),
       customerName: customerNameById.get(asNumber(row.customer_id)) ?? "Cliente sin nombre",
       title: asString(row.title),
       serviceMode: asString(row.service_mode) as Quote["serviceMode"],
+      currencyCode: row.currency_code === "USD" || row.currency_code === "EUR" ? row.currency_code : "MXN",
       totalAmount: asNumber(row.total_amount),
       estimatedMarginPercent: row.estimated_margin_percent === null ? null : asNumber(row.estimated_margin_percent),
       status: asString(row.status),
@@ -118,7 +126,7 @@ export async function getSalesOverview(supabase: SupabaseClient, requestedOrgani
     };
   });
 
-  return { organizationId, organizationName, organizations, isDemo: false, stages, quotes, opportunities };
+  return { organizationId, organizationName, organizations, isDemo: false, customers, stages, quotes, opportunities };
 }
 
 export async function getSalesContext(supabase: SupabaseClient, requestedOrganizationId?: number) {

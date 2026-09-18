@@ -5,9 +5,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const createQuoteSchema = z.object({
   organizationId: z.coerce.number().int().positive(),
-  customerName: z.string().trim().min(2).max(160),
+  customerId: z.coerce.number().int().positive(),
   title: z.string().trim().min(3).max(220),
   serviceMode: z.enum(["workshop", "field", "parts"]),
+  currencyCode: z.enum(["MXN", "USD", "EUR"]),
   estimatedRevenue: z.coerce.number().min(0).max(999_999_999),
   estimatedCost: z.coerce.number().min(0).max(999_999_999),
   validUntil: z.string().date().optional().or(z.literal("")),
@@ -41,30 +42,22 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (!newStage) return NextResponse.json({ error: "The initial pipeline stage is missing." }, { status: 409 });
 
-  const { data: existingCustomer } = await supabase
+  const { data: customer, error: customerError } = await supabase
     .from("customers")
     .select("id")
     .eq("organization_id", context.organizationId)
-    .eq("display_name", parsed.data.customerName)
+    .eq("id", parsed.data.customerId)
     .is("archived_at", null)
     .maybeSingle();
-
-  const customerResult = existingCustomer
-    ? { data: existingCustomer, error: null }
-    : await supabase
-      .from("customers")
-      .insert({ organization_id: context.organizationId, display_name: parsed.data.customerName, status: "prospect" })
-      .select("id")
-      .single();
-  if (customerResult.error || !customerResult.data) {
-    return NextResponse.json({ error: "The customer could not be saved." }, { status: 500 });
+  if (customerError || !customer) {
+    return NextResponse.json({ error: "Select an active customer from this company." }, { status: 400 });
   }
 
   const { data: opportunity, error: opportunityError } = await supabase
     .from("sales_opportunities")
     .insert({
       organization_id: context.organizationId,
-      customer_id: customerResult.data.id,
+      customer_id: customer.id,
       pipeline_id: pipeline.id,
       stage_id: newStage.id,
       title: parsed.data.title,
@@ -84,9 +77,10 @@ export async function POST(request: Request) {
     .insert({
       organization_id: context.organizationId,
       opportunity_id: opportunity.id,
-      customer_id: customerResult.data.id,
+      customer_id: customer.id,
       title: parsed.data.title,
       service_mode: parsed.data.serviceMode,
+      currency_code: parsed.data.currencyCode,
       estimated_cost: parsed.data.estimatedCost,
       valid_until: parsed.data.validUntil || null,
       status: "draft",

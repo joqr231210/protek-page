@@ -5,6 +5,10 @@ The real Protek application now lives in `src/app/sales`. The previous static ar
 ## What is implemented
 
 - A single **Ventas** parent entry with sidebar submenu views for Offers, Tablero, and Summary.
+- Offers open in a dedicated detail view. New Offer hides the offer table and metrics, groups commercial fields under **Información General**, and includes **Información técnica** for the operational handoff.
+- The offer intake selects an existing customer through a searchable dropdown, requires a service type and currency, and displays monetary inputs with the selected currency prefix and format.
+- A **Clientes** submenu provides inline create and edit flows for company-scoped customer records.
+- The top-level **Ajustes** view exposes a tab for every main module, starting with its module-specific flow, catalog, permission, and automation settings.
 - Quotes, opportunities, customers, contacts, and assets in a relational Supabase model.
 - A customer-scoped sales pipeline with default stages created when an organization is onboarded.
 - Quote lines with database-calculated subtotal, taxes, total, and estimated margin.
