@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Protek Industrial | Ventas",
+  title: "Protek | Sistema operativo industrial",
   description: "Sistema AI-native para talleres y empresas de reparación.",
 };
 

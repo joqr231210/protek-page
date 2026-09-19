@@ -1,26 +1,22 @@
-# Protek Page
+# Protek
 
-Landing page estática para **Protek**, el sistema AI-native para talleres y empresas de reparación. La página presenta el producto, sus flujos operativos, el Agente IA y el Protek Quality Engine.
-
-También incluye la primera implementación Next.js del módulo de Ventas, un mockup estático de referencia y el sistema de diseño inicial para la aplicación.
+**Protek es el sistema operativo AI-native para hacer más rentables a los talleres y empresas de reparación.** Este repositorio reúne la experiencia comercial, la aplicación de escritorio, la documentación de producto y una demo pública estática para las primeras conversaciones de venta.
 
 ## Contenido
 
-- Propuesta de valor y llamada a solicitar una demo.
-- Flujos para taller, servicios en campo y refacciones.
-- Módulos de Órdenes, Recursos, Almacén, Compras, Ventas, Planeación, Calidad, Ingeniería y Agente IA.
-- Protek Quality Engine con ejemplo de pruebas técnicas y análisis semántico, matemático y visual.
-- Formulario de demo de interfaz. Aún no está conectado a un CRM o endpoint de captura.
-- Mockup navegable del módulo de Ventas: ofertas, Tablero por etapas y resumen comercial.
-- Sistema de diseño visual y documentación de sus fundamentos y patrones.
+- Landing comercial con flujos de taller, campo y refaccionamiento.
+- Aplicación en `/app`, con Ventas como primer módulo funcional de referencia.
+- Página `/product` que explica los trabajos que permite resolver cada módulo y sus integraciones.
+- Demo pública estática en `site/`, pensada para navegar el producto antes de conectar un entorno productivo.
+- [Plan de desarrollo de producto](docs/PRODUCT_DEVELOPMENT_PLAN.md), sistema de diseño y fundamento de datos multiempresa.
 
-## App de Ventas
+## Aplicación y Ventas
 
-La implementación activa vive en `/sales`. Incluye el submenú de Ventas (Ofertas, Tablero y Resumen), cambio de empresa desde el selector debajo del logo y una alta de oferta integrada en la vista. La empresa activa delimita las lecturas y escrituras de Supabase.
+La implementación activa vive en `/app`. Incluye el submenú de Ventas (Resumen, Ofertas, Tablero y Clientes), cambio de empresa desde el selector debajo del logo y una alta de oferta integrada en la vista. La empresa activa delimita las lecturas y escrituras de Supabase. La ruta histórica `/sales` redirige a `/app` para conservar enlaces existentes.
 
 La migración local de la base de datos está en `supabase/migrations/20260918014800_create_sales_foundation.sql`. Modela miembros multiempresa, permisos por módulo y nivel (`read`, `write`, `admin`) y los objetos comerciales con `organization_id`. Consulta `docs/SALES_MODULE.md` para la operación y despliegue de esta primera base.
 
-`app.html` conserva el mockup de escritorio de referencia. Para inspeccionar el sistema de diseño visual, abre `design-system.html`. Las reglas de implementación se encuentran en `DESIGN_SYSTEM.md`.
+`app.html` conserva el mockup de escritorio de referencia. Las reglas de implementación de interfaz se encuentran en `DESIGN_SYSTEM.md`. La secuencia para convertir los módulos de la demo en flujos de producción está en [PRODUCT_DEVELOPMENT_PLAN.md](docs/PRODUCT_DEVELOPMENT_PLAN.md).
 
 ## Ejecutar localmente
 
@@ -31,7 +27,7 @@ npm install
 npm run dev -- --port 3001
 ```
 
-Después visita `http://localhost:3001/sales`. La landing estática puede abrirse directamente desde `index.html`.
+Después visita `http://localhost:3001/app` y `http://localhost:3001/product`. La landing estática puede abrirse directamente desde `index.html`.
 
 ## Estructura
 
@@ -41,8 +37,13 @@ protek-page/
 │   └── protek-industrial-hero.png
 ├── src/
 │   ├── app/
+│   │   ├── app/
+│   │   └── product/
 │   └── features/sales/
 ├── supabase/migrations/
+├── site/
+│   ├── app/
+│   └── product/
 ├── app.html
 ├── app.css
 ├── app.js
@@ -56,7 +57,9 @@ protek-page/
 
 ## Despliegue
 
-Despliega la aplicación Next.js en Vercel y configura las variables de entorno de Supabase indicadas en `.env.example`. Las migraciones se aplican desde un entorno administrativo de Supabase; las claves de aplicación no administran el esquema.
+La aplicación conectada se despliega en Vercel y usa las variables de entorno de Supabase indicadas en `.env.example`. Las migraciones se aplican desde un entorno administrativo de Supabase; las claves de aplicación no administran el esquema.
+
+La carpeta `site/` contiene una versión estática e interactiva para Sites. Es una demo comercial: no persiste información de clientes, órdenes u ofertas. La aplicación productiva requiere aplicar la migración, autenticar usuarios y completar los módulos según el plan de desarrollo.
 
 ## Notas
 

@@ -1,6 +1,6 @@
 # Protek Sales Module
 
-The real Protek application now lives in `src/app/sales`. The previous static artifacts remain available as design references; they are not the runtime application.
+The real Protek application now lives in `src/app/app`. The historical `/sales` route redirects to `/app`; the sales API remains under `/api/sales` because it represents the commercial bounded context, not a screen URL. The previous static artifacts remain available as design references; they are not the runtime application.
 
 ## What is implemented
 
@@ -36,7 +36,7 @@ There is no `orders` table inside Sales. A quote is the commercial object; after
 1. Copy `.env.example` to `.env.local`.
 2. Set the project URL and publishable key. Do not add the secret key to any `NEXT_PUBLIC_` variable.
 3. Install packages with `npm install`.
-4. Run `npm run dev -- --port 3001` and visit `/sales`.
+4. Run `npm run dev -- --port 3001` and visit `/app`.
 
 Without a signed-in organization member, the page presents safe visual demo data. API writes are refused until a real Supabase session is present.
 
