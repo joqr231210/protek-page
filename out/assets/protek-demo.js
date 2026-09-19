@@ -72,5 +72,30 @@ function showOffer(id = "Nueva oferta") {
   document.querySelector("#workspace").innerHTML = `<section class="heading"><div><p class="eyebrow">VENTAS / ${id}</p><h1>${id}</h1><p>Información comercial y técnica vinculada a la operación.</p></div><button class="link-button" onclick="render('Ventas')">Volver a Ventas</button></section><section class="module-view"><span class="panel-label">INFORMACIÓN GENERAL</span><h2>${id === "Nueva oferta" ? "Preparar una oferta trazable." : "Overhaul de cilindro hidráulico"}</h2><div class="module-jobs"><div><span class="panel-label">CLIENTE</span><strong>Minera del Norte</strong><p>Activo: cilindro hidráulico.</p></div><div><span class="panel-label">RESPONSABLE</span><strong>Mariana Ruiz</strong><p>Estado: <span class="pill green">Oferta enviada</span></p></div><div><span class="panel-label">VALOR TOTAL</span><strong>$486,400.00 MXN</strong><p>Vigencia hasta 21 Sep 2026.</p></div></div></section>`;
 }
 
-document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => render(button.dataset.module)));
+function setMobileNavigation(open) {
+  const sidebar = document.querySelector(".side");
+  const toggle = document.querySelector(".mobile-menu-toggle");
+  const scrim = document.querySelector(".mobile-nav-scrim");
+  const isMobile = window.matchMedia("(max-width: 760px)").matches;
+  sidebar.classList.toggle("is-open", open);
+  scrim.classList.toggle("is-visible", open);
+  sidebar.setAttribute("aria-hidden", String(isMobile && !open));
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.setAttribute("aria-label", open ? "Cerrar navegación" : "Abrir navegación");
+  document.body.classList.toggle("nav-open", open);
+}
+
+document.querySelector(".mobile-menu-toggle").addEventListener("click", () => {
+  setMobileNavigation(!document.querySelector(".side").classList.contains("is-open"));
+});
+document.querySelector(".mobile-nav-scrim").addEventListener("click", () => setMobileNavigation(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setMobileNavigation(false);
+});
+window.addEventListener("resize", () => setMobileNavigation(false));
+document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => {
+  render(button.dataset.module);
+  setMobileNavigation(false);
+}));
+setMobileNavigation(false);
 render();
