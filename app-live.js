@@ -171,7 +171,7 @@ function renderApp() {
 function renderWorkspace() {
   if (app.quoteDetailId) return renderDetail();
   const heading = { summary: ["Resumen comercial", "Resultados, conversión y seguimiento para decidir el siguiente movimiento."], offers: ["Ofertas", "Convierte oportunidades de servicio y refacciones en trabajo rentable."], board: ["Tablero comercial", "Mueve ofertas entre etapas sin separar el dato comercial de la operación."], customers: ["Clientes", "Empresas y contactos que concentran historial comercial y operativo."] }[app.view];
-  const action = app.view === "offers" ? '<button class="live-primary" type="button" data-show-offer>+ Nueva oferta</button>' : app.view === "customers" ? '<button class="live-primary" type="button" data-new-customer>+ Nuevo cliente</button>' : "";
+  const action = app.view === "offers" && !app.showOfferForm ? '<button class="live-primary" type="button" data-show-offer>+ Nueva oferta</button>' : app.view === "customers" ? '<button class="live-primary" type="button" data-new-customer>+ Nuevo cliente</button>' : "";
   return notice() + '<section class="live-heading"><div><p class="eyebrow">MÓDULO / VENTAS</p><h1>' + heading[0] + '</h1><p>' + heading[1] + '</p></div><div class="live-heading-actions">' + action + '</div></section><nav class="live-tabs" aria-label="Secciones de Ventas">' + [["summary", "Resumen"], ["offers", "Ofertas"], ["board", "Tablero"], ["customers", "Clientes"]].map(function (item) { return '<button type="button" data-view="' + item[0] + '" class="' + (app.view === item[0] ? "active" : "") + '">' + item[1] + '</button>'; }).join("") + '</nav>' + (app.view === "summary" ? renderSummary() : app.view === "offers" ? renderOffers() : app.view === "board" ? renderBoard() : renderCustomers());
 }
 
@@ -191,18 +191,72 @@ function renderFilters() {
 function renderTable(quotes, title) {
   return '<section class="live-surface"><div class="live-surface-head"><b>' + title + '</b><span class="live-label">' + quotes.length + ' REGISTROS</span></div><div class="live-table"><div class="live-row head"><span>OFERTA</span><span>CLIENTE</span><span>IMPORTE</span><span>ETAPA</span></div>' + (quotes.length ? quotes.map(function (quote) { return '<button class="live-row" type="button" data-quote-id="' + quote.id + '"><span><b>Q-' + quote.quote_number + '</b><small>' + esc(quote.title) + '</small></span><span>' + esc(quote.customerName) + '</span><span>' + money(quote.total_amount, quote.currency_code) + '</span><span><em class="live-status ' + quote.status + '">' + esc(quote.stageName) + '</em></span></button>'; }).join("") : '<div class="empty-state">No hay ofertas con estos filtros.</div>') + '</div></section>';
 }
-function renderOfferForm() {
-  return '<section class="live-form-wrap"><h2>Nueva oferta</h2><p>La oferta crea una oportunidad y conserva el historial comercial desde el primer registro.</p><form class="live-form" id="offer-form"><label class="wide">Nombre de la oferta<input name="title" required minlength="3" placeholder="Ej. Overhaul de motor Cummins QSK19"></label><label>Cliente<select name="customerId" required><option value="">Selecciona un cliente</option>' + app.customers.map(function (customer) { return '<option value="' + customer.id + '">' + esc(customer.display_name) + '</option>'; }).join("") + '</select></label><label>Tipo de oferta<select name="serviceMode"><option value="workshop">Servicio en taller</option><option value="field">Servicio en campo</option><option value="parts">Refaccionamiento</option></select></label><label>Moneda<select name="currencyCode"><option value="MXN">MXN · Peso mexicano</option><option value="USD">USD · Dólar estadounidense</option><option value="EUR">EUR · Euro</option></select></label><label>Vigencia<input name="validUntil" type="date"></label><label>Valor antes de impuestos<input name="subtotal" inputmode="decimal" placeholder="0.00" required></label><label>Valor total con impuestos<input name="totalAmount" inputmode="decimal" placeholder="0.00" required></label><label class="wide">Notas<input name="notes" placeholder="Alcance, condición reportada o consideraciones"></label><div class="live-form-actions"><button class="live-secondary" type="button" data-hide-offer>Cancelar</button><button class="live-primary" type="submit">Crear oferta</button></div></form></section>';
+function customerMatches(customer, query) {
+  return [customer.display_name, customer.legal_name, customer.tax_id, customer.account_code].some(function (value) { return String(value || "").toLocaleLowerCase("es").includes(query); });
 }
-function renderOffers() { return (app.showOfferForm ? renderOfferForm() : "") + renderFilters() + renderTable(filteredQuotes(), "Ofertas"); }
+function closeCustomerResults() {
+  const results = root.querySelector("#offer-customer-options");
+  const search = root.querySelector("#offer-customer-search");
+  if (results) results.hidden = true;
+  if (search) search.setAttribute("aria-expanded", "false");
+}
+function showCustomerResults() {
+  const search = root.querySelector("#offer-customer-search");
+  const results = root.querySelector("#offer-customer-options");
+  if (!search || !results) return;
+  const query = search.value.trim().toLocaleLowerCase("es");
+  const matches = app.customers.filter(function (customer) { return customerMatches(customer, query); }).slice(0, 8);
+  results.innerHTML = (matches.length ? matches.map(function (customer) { return '<button type="button" role="option" data-customer-select="' + customer.id + '"><strong>' + esc(customer.display_name) + '</strong><small>' + esc(customer.legal_name || customer.tax_id || customer.account_code || "Cliente registrado") + '</small></button>'; }).join("") : '<p class="customer-no-results">No hay clientes con ese nombre.</p>') + '<button type="button" class="customer-create-option" data-quick-customer>+ Registrar cliente nuevo</button>';
+  results.hidden = false;
+  search.setAttribute("aria-expanded", "true");
+}
+function selectOfferCustomer(customer) {
+  root.querySelector("#offer-customer-id").value = customer.id;
+  root.querySelector("#offer-customer-search").value = customer.display_name;
+  root.querySelector("#offer-customer-error").textContent = "";
+  root.querySelector("#quick-customer-fields").hidden = true;
+  closeCustomerResults();
+}
+function openQuickCustomer() {
+  const panel = root.querySelector("#quick-customer-fields");
+  panel.hidden = false;
+  root.querySelector("#quick-customer-name").value = root.querySelector("#offer-customer-search").value.trim();
+  root.querySelector("#quick-customer-error").textContent = "";
+  closeCustomerResults();
+  root.querySelector("#quick-customer-name").focus();
+}
+async function createQuickCustomer() {
+  const name = root.querySelector("#quick-customer-name");
+  const error = root.querySelector("#quick-customer-error");
+  const button = root.querySelector("#quick-customer-save");
+  if (button.disabled) return;
+  name.value = name.value.trim();
+  if (name.value.length < 2 || name.value.length > 160) { error.textContent = "Escribe un nombre de 2 a 160 caracteres."; name.focus(); return; }
+  const existing = app.customers.find(function (customer) { return customer.display_name.toLocaleLowerCase("es") === name.value.toLocaleLowerCase("es"); });
+  if (existing) { selectOfferCustomer(existing); showToast("El cliente ya estaba registrado; quedó seleccionado."); return; }
+  button.disabled = true;
+  error.textContent = "";
+  const payload = { organization_id: app.organizationId, display_name: name.value, legal_name: root.querySelector("#quick-customer-legal").value.trim() || null, tax_id: root.querySelector("#quick-customer-tax").value.trim() || null, status: "prospect" };
+  const result = await client.from("customers").insert(payload).select("id, display_name, legal_name, tax_id, account_code, status").single();
+  button.disabled = false;
+  if (result.error) { error.textContent = result.error.message || "No se pudo registrar el cliente."; return; }
+  app.customers.push(result.data);
+  app.customers.sort(function (a, b) { return a.display_name.localeCompare(b.display_name, "es"); });
+  selectOfferCustomer(result.data);
+  showToast("Cliente creado y seleccionado para esta oferta.");
+}
+function renderOfferForm() {
+  return '<section class="live-form-wrap"><h2>Nueva oferta</h2><p>La oferta crea una oportunidad y conserva el historial comercial desde el primer registro.</p><form class="live-form" id="offer-form"><label class="wide">Nombre de la oferta<input name="title" required minlength="3" placeholder="Ej. Overhaul de motor Cummins QSK19"></label><div class="customer-picker" id="offer-customer-picker"><label for="offer-customer-search">Cliente</label><div class="customer-search-wrap"><input id="offer-customer-search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="offer-customer-options" autocomplete="off" placeholder="Buscar cliente o registrar uno"><div class="customer-options" id="offer-customer-options" role="listbox" hidden></div></div><input type="hidden" id="offer-customer-id" name="customerId"><span class="customer-field-error" id="offer-customer-error" role="alert"></span><div class="quick-customer-fields" id="quick-customer-fields" hidden><strong>Nuevo cliente</strong><label for="quick-customer-name">Nombre comercial<input id="quick-customer-name" minlength="2" maxlength="160" placeholder="Nombre del cliente"></label><label for="quick-customer-legal">Razón social <span>(opcional)</span><input id="quick-customer-legal" placeholder="Razón social"></label><label for="quick-customer-tax">RFC <span>(opcional)</span><input id="quick-customer-tax" placeholder="RFC"></label><span class="customer-field-error" id="quick-customer-error" role="alert"></span><div class="quick-customer-actions"><button class="subtle-button" id="quick-customer-cancel" type="button">Cancelar</button><button class="live-secondary" id="quick-customer-save" type="button">Registrar y seleccionar</button></div></div></div><label>Tipo de oferta<select name="serviceMode"><option value="workshop">Servicio en taller</option><option value="field">Servicio en campo</option><option value="parts">Refaccionamiento</option></select></label><label>Moneda<select name="currencyCode"><option value="MXN">MXN · Peso mexicano</option><option value="USD">USD · Dólar estadounidense</option><option value="EUR">EUR · Euro</option></select></label><label>Vigencia<input name="validUntil" type="date"></label><label>Valor antes de impuestos<input name="subtotal" inputmode="decimal" placeholder="0.00" required></label><label>Valor total con impuestos<input name="totalAmount" inputmode="decimal" placeholder="0.00" required></label><label class="wide">Notas<input name="notes" placeholder="Alcance, condición reportada o consideraciones"></label><p class="customer-field-error wide" id="offer-form-error" role="alert"></p><div class="live-form-actions"><button class="live-secondary" type="button" data-hide-offer>Cancelar</button><button class="live-primary" type="submit">Crear oferta</button></div></form></section>';
+}
+function renderOffers() { return app.showOfferForm ? renderOfferForm() : renderFilters() + renderTable(filteredQuotes(), "Ofertas"); }
 function renderBoard() {
   const quotes = filteredQuotes();
   return renderFilters() + '<section class="live-surface"><div class="live-surface-head"><b>Pipeline comercial</b><span class="live-label">ARRASTRA PARA ACTUALIZAR ETAPA</span></div><div class="live-board">' + app.stages.filter(function (stage) { return stage.outcome !== "lost"; }).map(function (stage) { const rows = quotes.filter(function (quote) { return quote.stageId === stage.id; }); return '<section class="live-column" data-stage-id="' + stage.id + '"><header><span>' + esc(stage.name) + '</span><b>' + rows.length + '</b></header><div class="live-column-value">' + compact(rows.reduce(function (sum, quote) { return sum + Number(quote.total_amount || 0); }, 0)) + '</div>' + rows.map(function (quote) { return '<button class="live-deal" draggable="true" data-drag-quote="' + quote.id + '" data-quote-id="' + quote.id + '" type="button"><span>' + label[quote.service_mode] + '</span><h3>' + esc(quote.title) + '</h3><p>' + esc(quote.customerName) + '</p><footer><strong>' + compact(quote.total_amount, quote.currency_code) + '</strong><i>' + esc(initials(quote.responsibleName)) + '</i></footer></button>'; }).join("") + '</section>'; }).join("") + '</div></section>';
 }
 function renderCustomers() {
   const existing = app.customerEditorId ? app.customers.find(function (customer) { return customer.id === app.customerEditorId; }) : null;
-  const form = app.customerEditorId !== null ? '<section class="live-form-wrap"><h2>' + (existing ? "Editar cliente" : "Nuevo cliente") + '</h2><p>Este registro queda disponible para ofertas, órdenes y servicio.</p><form class="live-form" id="customer-form"><input name="id" type="hidden" value="' + (existing && existing.id || "") + '"><label>Nombre comercial<input name="displayName" value="' + esc(existing && existing.display_name) + '" required minlength="2"></label><label>Estado<select name="status"><option value="prospect" ' + (existing && existing.status === "prospect" ? "selected" : "") + '>Prospecto</option><option value="active" ' + (existing && existing.status === "active" ? "selected" : "") + '>Activo</option><option value="inactive" ' + (existing && existing.status === "inactive" ? "selected" : "") + '>Inactivo</option></select></label><label class="wide">Razón social<input name="legalName" value="' + esc(existing && existing.legal_name) + '"></label><label>RFC<input name="taxId" value="' + esc(existing && existing.tax_id) + '"></label><label>Código de cliente<input name="accountCode" value="' + esc(existing && existing.account_code) + '"></label><div class="live-form-actions"><button class="live-secondary" data-cancel-customer type="button">Cancelar</button><button class="live-primary" type="submit">Guardar cliente</button></div></form></section>' : "";
-  return form + '<section class="live-surface"><div class="live-surface-head"><b>Clientes registrados</b><span class="live-label">' + app.customers.length + ' REGISTROS</span></div><div class="live-table"><div class="live-row head"><span>CLIENTE</span><span>RAZÓN SOCIAL</span><span>ESTADO</span><span>ACCIÓN</span></div>' + (app.customers.length ? app.customers.map(function (customer) { return '<div class="live-row"><span><b>' + esc(customer.display_name) + '</b><small>' + esc(customer.account_code || "Sin código") + '</small></span><span>' + esc(customer.legal_name || "Sin razón social") + '</span><span><em class="live-status">' + esc(customer.status) + '</em></span><span><button class="live-secondary" type="button" data-edit-customer="' + customer.id + '">Editar</button></span></div>'; }).join("") : '<div class="empty-state">Registra el primer cliente para crear una oferta.</div>') + '</div></section>';
+  const form = app.customerEditorId !== null ? '<section class="live-form-wrap"><h2>' + (existing ? "Editar cliente" : "Nuevo cliente") + '</h2><p>Este registro queda disponible para ofertas, órdenes y servicio.</p><form class="live-form" id="customer-form"><input name="id" type="hidden" value="' + (existing && existing.id || "") + '"><label>Nombre comercial<input name="displayName" value="' + esc(existing && existing.display_name) + '" required minlength="2"></label><label>Estado<select name="status"><option value="prospect" ' + (existing && existing.status === "prospect" ? "selected" : "") + '>Prospecto</option><option value="active" ' + (existing && existing.status === "active" ? "selected" : "") + '>Activo</option><option value="inactive" ' + (existing && existing.status === "inactive" ? "selected" : "") + '>Inactivo</option></select></label><label class="wide">Razón social<input name="legalName" value="' + esc(existing && existing.legal_name) + '"></label><label>RFC<input name="taxId" value="' + esc(existing && existing.tax_id) + '"></label><label>Código de cliente<input name="accountCode" value="' + esc(existing && existing.account_code) + '"></label><p class="customer-field-error wide" id="customer-form-error" role="alert"></p><div class="live-form-actions"><button class="live-secondary" data-cancel-customer type="button">Cancelar</button><button class="live-primary" type="submit">Guardar cliente</button></div></form></section>' : "";
+  return form + '<section class="live-surface"><div class="live-surface-head"><b>Clientes registrados</b><span class="live-label">' + app.customers.length + ' REGISTROS</span></div><div class="live-table"><div class="live-row head"><span>CLIENTE</span><span>RAZÓN SOCIAL</span><span>ESTADO</span><span>ACCIÓN</span></div>' + (app.customers.length ? app.customers.map(function (customer) { return '<div class="live-row"><span><b>' + esc(customer.display_name) + '</b><small>' + esc(customer.account_code || "Sin código") + '</small></span><span>' + esc(customer.legal_name || "Sin razón social") + '</span><span><em class="live-status">' + esc(({ active: "Activo", inactive: "Inactivo", prospect: "Prospecto" })[customer.status] || customer.status) + '</em></span><span><button class="live-secondary" type="button" data-edit-customer="' + customer.id + '">Editar</button></span></div>'; }).join("") : '<div class="empty-state">Registra el primer cliente para crear una oferta.</div>') + '</div></section>';
 }
 function renderDetail() {
   const quote = app.quotes.find(function (item) { return item.id === app.quoteDetailId; });
@@ -225,6 +279,45 @@ function bindEvents() {
   if (hideOffer) hideOffer.addEventListener("click", function () { app.showOfferForm = false; renderApp(); });
   const offerForm = root.querySelector("#offer-form");
   if (offerForm) offerForm.addEventListener("submit", saveOffer);
+  const customerSearch = root.querySelector("#offer-customer-search");
+  if (customerSearch) {
+    customerSearch.addEventListener("focus", showCustomerResults);
+    customerSearch.addEventListener("input", function () { root.querySelector("#offer-customer-id").value = ""; root.querySelector("#offer-customer-error").textContent = ""; showCustomerResults(); });
+    customerSearch.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") { closeCustomerResults(); return; }
+      if (event.key === "ArrowDown") { event.preventDefault(); showCustomerResults(); root.querySelector("#offer-customer-options button")?.focus(); }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const query = customerSearch.value.trim().toLocaleLowerCase("es");
+        const match = app.customers.find(function (customer) { return customerMatches(customer, query); });
+        if (match) selectOfferCustomer(match);
+        else openQuickCustomer();
+      }
+    });
+  }
+  const customerOptions = root.querySelector("#offer-customer-options");
+  if (customerOptions) {
+    customerOptions.addEventListener("click", function (event) {
+      const option = event.target.closest("[data-customer-select]");
+      if (option) { const customer = app.customers.find(function (item) { return item.id === Number(option.dataset.customerSelect); }); if (customer) selectOfferCustomer(customer); return; }
+      if (event.target.closest("[data-quick-customer]")) openQuickCustomer();
+    });
+    customerOptions.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") { closeCustomerResults(); customerSearch.focus(); }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const buttons = Array.from(customerOptions.querySelectorAll("button"));
+        const next = buttons.indexOf(document.activeElement) + (event.key === "ArrowDown" ? 1 : -1);
+        (buttons[next] || buttons[event.key === "ArrowDown" ? 0 : buttons.length - 1])?.focus();
+      }
+    });
+  }
+  const quickSave = root.querySelector("#quick-customer-save");
+  if (quickSave) quickSave.addEventListener("click", createQuickCustomer);
+  const quickFields = root.querySelector("#quick-customer-fields");
+  if (quickFields) quickFields.addEventListener("keydown", function (event) { if (event.key === "Enter" && event.target.tagName === "INPUT") { event.preventDefault(); createQuickCustomer(); } });
+  const quickCancel = root.querySelector("#quick-customer-cancel");
+  if (quickCancel) quickCancel.addEventListener("click", function () { root.querySelector("#quick-customer-fields").hidden = true; customerSearch.focus(); });
   const search = root.querySelector("#quote-search");
   if (search) search.addEventListener("input", function (event) { app.filters.search = event.target.value; renderApp(); });
   const customer = root.querySelector("#quote-customer");
@@ -250,9 +343,18 @@ function bindEvents() {
 async function saveOffer(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const customerId = Number(form.get("customerId"));
+  if (!customerId || !app.customers.some(function (customer) { return customer.id === customerId; })) {
+    root.querySelector("#offer-customer-error").textContent = "Selecciona un cliente registrado o crea uno nuevo.";
+    root.querySelector("#offer-customer-search").focus();
+    return;
+  }
   const parseNumber = function (name) { return Number(String(form.get(name) || "0").replace(/[^0-9.-]/g, "")); };
-  const result = await client.rpc("create_sales_offer", { p_organization_id: app.organizationId, p_customer_id: Number(form.get("customerId")), p_title: String(form.get("title") || "").trim(), p_service_mode: String(form.get("serviceMode") || "workshop"), p_currency_code: String(form.get("currencyCode") || "MXN"), p_subtotal: parseNumber("subtotal"), p_total_amount: parseNumber("totalAmount"), p_valid_until: String(form.get("validUntil") || "") || null, p_notes: String(form.get("notes") || "").trim() || null });
-  if (result.error) { setError(result.error); renderApp(); return; }
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const result = await client.rpc("create_sales_offer", { p_organization_id: app.organizationId, p_customer_id: customerId, p_title: String(form.get("title") || "").trim(), p_service_mode: String(form.get("serviceMode") || "workshop"), p_currency_code: String(form.get("currencyCode") || "MXN"), p_subtotal: parseNumber("subtotal"), p_total_amount: parseNumber("totalAmount"), p_valid_until: String(form.get("validUntil") || "") || null, p_notes: String(form.get("notes") || "").trim() || null });
+  button.disabled = false;
+  if (result.error) { root.querySelector("#offer-form-error").textContent = result.error.message || "No se pudo crear la oferta."; return; }
   app.showOfferForm = false;
   setNotice("Oferta Q-" + (result.data && result.data[0] && result.data[0].quote_number || "") + " creada.");
   await loadSales();
@@ -262,8 +364,8 @@ async function saveCustomer(event) {
   const form = new FormData(event.currentTarget);
   const id = Number(form.get("id") || 0);
   const payload = { organization_id: app.organizationId, display_name: String(form.get("displayName") || "").trim(), legal_name: String(form.get("legalName") || "").trim() || null, tax_id: String(form.get("taxId") || "").trim() || null, account_code: String(form.get("accountCode") || "").trim() || null, status: String(form.get("status") || "prospect") };
-  const result = id ? await client.from("customers").update(payload).eq("id", id).eq("organization_id", app.organizationId) : await client.from("customers").insert(payload);
-  if (result.error) { setError(result.error); renderApp(); return; }
+  const result = id ? await client.from("customers").update(payload).eq("id", id).eq("organization_id", app.organizationId).select("id").single() : await client.from("customers").insert(payload).select("id").single();
+  if (result.error) { root.querySelector("#customer-form-error").textContent = result.error.message || "No se pudo guardar el cliente."; return; }
   app.customerEditorId = null;
   setNotice(id ? "Cliente actualizado." : "Cliente creado.");
   await loadSales();
@@ -298,5 +400,6 @@ async function boot() {
   clearPendingAuth();
   await loadWorkspace();
 }
+document.addEventListener("pointerdown", function (event) { const picker = root.querySelector("#offer-customer-picker"); if (picker && !picker.contains(event.target)) closeCustomerResults(); });
 client.auth.onAuthStateChange(function (event) { if (event === "SIGNED_OUT") { app.user = null; app.authStep = "email"; app.authMode = "login"; app.authEmail = ""; app.notice = ""; app.error = ""; clearPendingAuth(); renderAuth(); } });
 boot();

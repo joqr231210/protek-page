@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Protek Sales UI Test</title>
+  <link rel="stylesheet" href="../out/assets/protek-demo.css">
+  <link rel="stylesheet" href="../app-live.css">
+</head>
+<body>
+  <div id="app-root"></div>
+  <script>
+    const customers = [{ id: 10, display_name: "Grupo Moller", legal_name: "Grupo Moller SA de CV", tax_id: "GMO123456AAA", account_code: "GM-01", status: "active" }];
+    const opportunities = [];
+    const quotes = [];
+    let nextCustomerId = 11;
+    let nextQuoteId = 1;
+    class Query {
+      constructor(table) { this.table = table; }
+      select() { return this; }
+      eq(field, value) { if (field === "id") this.rowId = value; return this; }
+      is() { return this; }
+      order() { return this; }
+      insert(payload) { this.inserted = payload; return this; }
+      update(payload) { this.updated = payload; return this; }
+      maybeSingle() { return Promise.resolve({ data: { display_name: "QA Protek" }, error: null }); }
+      single() {
+        if (this.table === "customers" && this.inserted) {
+          const customer = { ...this.inserted, id: nextCustomerId++ };
+          customers.push(customer);
+          return Promise.resolve({ data: customer, error: null });
+        }
+        if (this.table === "customers" && this.updated) {
+          const customer = customers.find((item) => item.id === this.rowId);
+          Object.assign(customer, this.updated);
+          return Promise.resolve({ data: { id: customer.id }, error: null });
+        }
+        return Promise.resolve({ data: { id: 10 }, error: null });
+      }
+      then(resolve, reject) {
+        const data = {
+          organization_members: [{ organization_id: 1, role: "owner", user_id: "qa", organizations: { id: 1, name: "Taller QA", slug: "taller-qa" }, profiles: { display_name: "QA Protek" } }],
+          pipeline_stages: [{ id: 1, stage_key: "new", name: "Nueva oportunidad", position: 1, outcome: null }],
+          customers,
+          sales_opportunities: opportunities,
+          quotes
+        }[this.table] || [];
+        return Promise.resolve({ data: Array.isArray(data) ? [...data] : data, error: null }).then(resolve, reject);
+      }
+    }
+    window.supabase = { createClient: () => ({
+      auth: { getUser: async () => ({ data: { user: { id: "qa", email: "qa@example.invalid" } } }), onAuthStateChange: () => {}, signOut: async () => {} },
+      from: (table) => new Query(table),
+      rpc: async (name, args) => {
+        if (name !== "create_sales_offer") return { error: new Error("RPC no simulada") };
+        const id = nextQuoteId++;
+        opportunities.push({ id, customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, estimated_revenue: args.p_total_amount, stage_id: 1, owner_id: "qa", updated_at: new Date().toISOString() });
+        quotes.push({ id, quote_number: id, opportunity_id: id, customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, currency_code: args.p_currency_code, subtotal: args.p_subtotal, total_amount: args.p_total_amount, status: "draft", updated_at: new Date().toISOString(), valid_until: null });
+        return { data: [{ quote_id: id, quote_number: id }], error: null };
+      }
+    }) };
+  </script>
+  <script src="../app-live.js"></script>
+</body>
+</html>

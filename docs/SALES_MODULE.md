@@ -10,8 +10,8 @@ The connected Sales application is published at the Sites `/app` route. It uses 
 - **Información General** keeps the business context together: offer name, notes, estimated amounts, currency immediately before validity, and related documents.
 - **Información técnica** starts with the asset and a technical template selector. The starter `Ficha electromecánica estándar` renders serial number, brand, type, voltage, current, speed, weight, and color before the universal reported-condition field. Sales settings expose **Plantillas técnicas de oferta** as the configuration entry point.
 - **Información General** includes related documents: each attachment has a business-facing name and file metadata, and removing an attachment always requires a confirmation dialog.
-- The offer intake selects an existing customer through a searchable dropdown, requires a service type and currency, and displays monetary inputs with the selected currency prefix and format.
-- A **Clientes** submenu provides inline create and edit flows for company-scoped customer records.
+- In the live Sites app, the offer intake searches customers by commercial name, legal name, RFC, or account code. The dropdown supports keyboard selection and an inline quick-registration form for a new prospect (name, optional legal name and RFC); the new customer is selected without clearing the unfinished offer.
+- A **Clientes** submenu provides inline create and edit flows for company-scoped customer records. Both this form and quick registration write through Supabase RLS using the active organization's sales permissions.
 - The top-level **Ajustes** view exposes a tab for every main module, starting with its module-specific flow, catalog, permission, and automation settings.
 - Quotes, opportunities, customers, contacts, and assets in a relational Supabase model.
 - A customer-scoped sales pipeline with default stages created when an organization is onboarded.
