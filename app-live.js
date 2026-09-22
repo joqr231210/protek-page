@@ -1,6 +1,6 @@
 const root = document.querySelector("#app-root");
 const client = window.supabase.createClient("https://zdwkjdbjwwxenwmdrzgq.supabase.co", "sb_publishable_JF2LRShpTvvTLv_0oZNTJA_lCqJFOub");
-const app = { user: null, profile: null, organizations: [], organizationId: Number(localStorage.getItem("protek.activeOrganization") || 0), stages: [], customers: [], members: [], opportunities: [], quotes: [], view: "summary", authEmail: "", authStep: "email", notice: "", error: "", showOfferForm: false, quoteDetailId: null, customerEditorId: null, filters: { search: "", customerId: "", serviceMode: "" } };
+const app = { user: null, profile: null, organizations: [], organizationId: Number(localStorage.getItem("protek.activeOrganization") || 0), stages: [], customers: [], members: [], opportunities: [], quotes: [], view: "summary", authEmail: "", authMode: "login", authStep: "email", authRequestedAt: 0, notice: "", error: "", showOfferForm: false, quoteDetailId: null, customerEditorId: null, filters: { search: "", customerId: "", serviceMode: "" } };
 const label = { workshop: "Servicio en taller", field: "Servicio en campo", parts: "Refaccionamiento", draft: "Borrador", pending_approval: "Por autorizar", sent: "Oferta enviada", negotiation: "Negociación", approved: "Autorizada", rejected: "Rechazada" };
 
 function esc(value) { return String(value || "").replace(/[&<>"']/g, function (char) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]; }); }
@@ -20,42 +20,87 @@ function filteredQuotes() {
   });
 }
 function notice() { return app.error ? '<p class="live-notice">' + esc(app.error) + '</p>' : app.notice ? '<p class="live-notice live-success">' + esc(app.notice) + '</p>' : ""; }
+function authError(error) {
+  const message = String(error && error.message || "").toLowerCase();
+  if (message.includes("expired") || message.includes("invalid") || message.includes("token")) return "El código venció o no es válido. Solicita uno nuevo y usa el código más reciente.";
+  if (message.includes("rate limit") || message.includes("seconds") || message.includes("frequency")) return "Espera un minuto antes de solicitar otro código.";
+  if (message.includes("not found") || message.includes("signup") || message.includes("not allowed")) return "No encontramos una cuenta con este correo. Selecciona Crear cuenta.";
+  return error && error.message || "No fue posible completar el acceso.";
+}
+function showToast(message) {
+  const old = document.querySelector("#auth-toast");
+  if (old) old.remove();
+  const toast = document.createElement("div");
+  toast.id = "auth-toast";
+  toast.setAttribute("role", "status");
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(function () { if (toast.isConnected) toast.remove(); }, 6500);
+}
+function savePendingAuth() {
+  sessionStorage.setItem("protek.pendingAuth", JSON.stringify({ email: app.authEmail, mode: app.authMode, requestedAt: app.authRequestedAt }));
+}
+function clearPendingAuth() { sessionStorage.removeItem("protek.pendingAuth"); }
 
 function renderAuth() {
   const code = app.authStep === "code";
-  root.innerHTML = '<main class="auth-shell"><section class="auth-card"><div class="auth-brand"><i></i>protek</div><h1>' + (code ? "Confirma tu acceso." : "Entra a tu operación.") + '</h1><p>' + (code ? "Enviamos un código de seis dígitos a " + esc(app.authEmail) + "." : "Accede con un código de un solo uso enviado a tu correo de trabajo.") + '</p><form class="auth-form" id="auth-form">' + (code ? '<label>Código de acceso<input name="token" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required></label>' : '<label>Nombre<input name="name" autocomplete="name" placeholder="Tu nombre"></label><label>Correo de trabajo<input name="email" type="email" autocomplete="email" placeholder="nombre@empresa.com" required></label>') + '<p class="auth-status ' + (app.error ? "error" : "") + '">' + esc(app.error || app.notice) + '</p><button class="live-primary" type="submit">' + (code ? "Verificar código" : "Enviar código") + '</button>' + (code ? '<button class="subtle-button" id="back-email" type="button">Usar otro correo</button>' : "") + '</form><p class="auth-note">El código vence según la política de seguridad configurada para tu organización.</p></section></main>';
+  const registering = app.authMode === "register";
+  root.innerHTML = '<main class="auth-shell"><section class="auth-card"><div class="auth-brand"><i></i>protek</div>' + (code ? '' : '<div class="auth-switch" role="group" aria-label="Tipo de acceso"><button type="button" data-auth-mode="login" class="' + (registering ? '' : 'active') + '" aria-pressed="' + (!registering) + '">Iniciar sesión</button><button type="button" data-auth-mode="register" class="' + (registering ? 'active' : '') + '" aria-pressed="' + registering + '">Crear cuenta</button></div>') + '<h1>' + (code ? 'Revisa tu correo.' : registering ? 'Crea tu cuenta.' : 'Inicia sesión.') + '</h1><p>' + (code ? 'Enviamos un código de seis dígitos a <strong>' + esc(app.authEmail) + '</strong>. Usa el código más reciente; los anteriores dejan de funcionar.' : registering ? 'Regístrate con tu correo de trabajo. Después podrás crear tu empresa.' : 'Accede a tu empresa con un código de un solo uso.') + '</p><form class="auth-form" id="auth-form">' + (code ? '<label>Código de acceso<input name="token" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required autofocus></label>' : '<label>Correo de trabajo<input name="email" type="email" autocomplete="email" value="' + esc(app.authEmail) + '" placeholder="nombre@empresa.com" required autofocus></label>') + '<p class="auth-status ' + (app.error ? 'error' : '') + '" aria-live="polite">' + esc(app.error || app.notice) + '</p><button class="live-primary" type="submit">' + (code ? 'Confirmar código' : registering ? 'Crear cuenta' : 'Enviar código') + '</button>' + (code ? '<div class="auth-form-links"><button class="subtle-button" id="resend-code" type="button">Reenviar código</button><button class="subtle-button" id="back-email" type="button">Cambiar correo</button></div>' : '') + '</form><p class="auth-note">' + (code ? 'El código vence en una hora.' : 'No necesitas contraseña.') + '</p></section></main>';
   root.querySelector("#auth-form").addEventListener("submit", code ? verifyOtp : sendOtp);
+  root.querySelectorAll("[data-auth-mode]").forEach(function (button) { button.addEventListener("click", function () { app.authMode = button.dataset.authMode; app.error = ""; app.notice = ""; clearPendingAuth(); renderAuth(); }); });
   const back = root.querySelector("#back-email");
-  if (back) back.addEventListener("click", function () { app.authStep = "email"; app.notice = ""; app.error = ""; renderAuth(); });
+  if (back) back.addEventListener("click", function () { app.authStep = "email"; app.notice = ""; app.error = ""; clearPendingAuth(); renderAuth(); });
+  const resend = root.querySelector("#resend-code");
+  if (resend) resend.addEventListener("click", function () { requestOtp(app.authEmail, resend); });
 }
 
 async function sendOtp(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   app.authEmail = String(form.get("email") || "").trim().toLowerCase();
-  const fullName = String(form.get("name") || "").trim();
-  const button = event.currentTarget.querySelector("button[type=submit]");
+  await requestOtp(app.authEmail, event.currentTarget.querySelector("button[type=submit]"));
+}
+
+async function requestOtp(email, button) {
   button.disabled = true;
-  const result = await client.auth.signInWithOtp({ email: app.authEmail, options: { data: { full_name: fullName || app.authEmail.split("@")[0] } } });
-  if (result.error) { setError(result.error); renderAuth(); return; }
+  const requestedAt = Date.now();
+  const result = await client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: app.authMode === "register" } });
+  if (result.error && app.authMode === "register" && /already registered|already exists/i.test(result.error.message || "")) {
+    app.authMode = "login";
+    app.error = "";
+    app.notice = "";
+    renderAuth();
+    showToast("Este correo ya tiene cuenta. Inicia sesión.");
+    return;
+  }
+  if (result.error) { app.error = authError(result.error); app.notice = ""; renderAuth(); return; }
+  app.authRequestedAt = requestedAt;
   app.authStep = "code";
-  setNotice("Código enviado. Revisa tu bandeja de entrada.");
+  savePendingAuth();
+  setNotice("Código enviado. Revisa tu bandeja de entrada y spam.");
   renderAuth();
 }
 
 async function verifyOtp(event) {
   event.preventDefault();
   const token = String(new FormData(event.currentTarget).get("token") || "").trim();
+  event.currentTarget.querySelector("button[type=submit]").disabled = true;
   const result = await client.auth.verifyOtp({ email: app.authEmail, token: token, type: "email" });
-  if (result.error || !result.data.user) { setError(result.error || new Error("El código no es válido.")); renderAuth(); return; }
+  if (result.error || !result.data.user) { app.error = authError(result.error); app.notice = ""; renderAuth(); return; }
   app.user = result.data.user;
-  setNotice("Acceso confirmado.");
+  const existingAccount = app.authMode === "register" && Date.parse(app.user.created_at) < app.authRequestedAt - 2000;
+  clearPendingAuth();
+  app.authStep = "email";
+  app.authMode = "login";
+  setNotice(existingAccount ? "Este correo ya tenía una cuenta. Iniciaste sesión." : "Acceso confirmado.");
   await loadWorkspace();
+  if (existingAccount) showToast("Este correo ya tenía una cuenta. Iniciaste sesión.");
 }
 
 function renderOnboarding() {
-  root.innerHTML = '<main class="auth-shell"><section class="auth-card"><div class="auth-brand"><i></i>protek</div><h1>Crea tu primera empresa.</h1><p>Esta empresa será el límite de datos, permisos y operación para tu equipo.</p><form class="auth-form" id="organization-form"><label>Nombre de la empresa<input name="name" placeholder="Ej. Taller Industrial del Norte" required minlength="2"></label><label>Identificador<input name="slug" placeholder="taller-industrial-norte" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required></label><p class="auth-status ' + (app.error ? "error" : "") + '">' + esc(app.error || app.notice) + '</p><button class="live-primary" type="submit">Crear empresa</button></form></section></main>';
+  root.innerHTML = '<main class="auth-shell"><section class="auth-card"><div class="auth-brand"><i></i>protek</div><p class="auth-account">Sesión iniciada: ' + esc(app.user.email) + '</p><h1>Configura tu empresa.</h1><p>Tu cuenta ya está activa, pero todavía no pertenece a una empresa. Crea la tuya o pide a un administrador que te invite a una existente.</p><form class="auth-form" id="organization-form"><label>Nombre de la empresa<input name="name" placeholder="Ej. Taller Industrial del Norte" required minlength="2"></label><label>Identificador<input name="slug" placeholder="taller-industrial-norte" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required></label><p class="auth-status ' + (app.error ? "error" : "") + '">' + esc(app.error || app.notice) + '</p><button class="live-primary" type="submit">Crear empresa</button><button class="subtle-button" type="button" id="onboarding-sign-out">Usar otro correo</button></form></section></main>';
   root.querySelector("#organization-form").addEventListener("submit", createOrganization);
+  root.querySelector("#onboarding-sign-out").addEventListener("click", async function () { await client.auth.signOut(); });
 }
 
 async function createOrganization(event) {
@@ -167,7 +212,7 @@ function renderDetail() {
 
 function bindEvents() {
   const signOut = root.querySelector("#sign-out");
-  if (signOut) signOut.addEventListener("click", async function () { await client.auth.signOut(); app.user = null; app.notice = ""; app.error = ""; app.authStep = "email"; renderAuth(); });
+  if (signOut) signOut.addEventListener("click", async function () { await client.auth.signOut(); });
   const companies = root.querySelector("#company-select");
   if (companies) companies.addEventListener("change", async function (event) { app.organizationId = Number(event.target.value); localStorage.setItem("protek.activeOrganization", String(app.organizationId)); app.quoteDetailId = null; app.customerEditorId = null; setNotice("Empresa activa actualizada."); await loadSales(); });
   root.querySelectorAll("[data-view]").forEach(function (button) { button.addEventListener("click", function () { app.view = button.dataset.view; app.quoteDetailId = null; app.customerEditorId = null; app.showOfferForm = false; app.error = ""; app.notice = ""; renderApp(); }); });
@@ -237,8 +282,21 @@ async function moveOffer(event, stageId) {
 async function boot() {
   const result = await client.auth.getUser();
   app.user = result.data.user;
-  if (!app.user) { renderAuth(); return; }
+  if (!app.user) {
+    try {
+      const pending = JSON.parse(sessionStorage.getItem("protek.pendingAuth") || "null");
+      if (pending && Date.now() - pending.requestedAt < 3600000 && ["login", "register"].includes(pending.mode)) {
+        app.authEmail = pending.email;
+        app.authMode = pending.mode;
+        app.authStep = "code";
+        app.authRequestedAt = pending.requestedAt;
+      } else clearPendingAuth();
+    } catch (_) { clearPendingAuth(); }
+    renderAuth();
+    return;
+  }
+  clearPendingAuth();
   await loadWorkspace();
 }
-client.auth.onAuthStateChange(function (_event, session) { if (!session || !session.user) { app.user = null; renderAuth(); } });
+client.auth.onAuthStateChange(function (event) { if (event === "SIGNED_OUT") { app.user = null; app.authStep = "email"; app.authMode = "login"; app.authEmail = ""; app.notice = ""; app.error = ""; clearPendingAuth(); renderAuth(); } });
 boot();

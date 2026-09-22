@@ -57,13 +57,15 @@ protek-page/
 
 ## App funcional en Sites
 
-La ruta pública /app es una aplicación funcional de Ventas conectada a Supabase. Incluye acceso por código OTP de correo, onboarding de empresa, permisos de propietario, clientes editables, ofertas persistentes y un tablero comercial que actualiza etapa, estatus e historial.
+La ruta pública /app es una aplicación funcional de Ventas conectada a Supabase. Incluye registro e inicio de sesión separados, ambos solo con correo y código OTP, onboarding de empresa, permisos de propietario, clientes editables, ofertas persistentes y un tablero comercial que actualiza etapa, estatus e historial.
 
 El primer usuario que entra crea su empresa. Ese registro inicializa su pipeline comercial y los permisos de propietario para los módulos.
 
 ### Configuración requerida para OTP
 
-En Supabase, configura el template Magic Link de Auth para que su contenido incluya el texto {{ .Token }}. Supabase envía un enlace mágico por defecto aunque se invoque signInWithOtp; incluir esa variable habilita el código de un solo uso que pide Protek.
+En Supabase Auth, configura **Magic Link** y **Confirm signup** para que ambos incluyan exactamente `{{ .Token }}`. Magic Link se usa al iniciar sesión y Confirm signup al crear una cuenta. El flujo de inicio de sesión usa `shouldCreateUser: false`; solo Crear cuenta permite el alta. La verificación usa `verifyOtp` con `type: "email"`.
+
+La duración del OTP está configurada en 3600 segundos y su longitud en 6 dígitos, igual que el campo de la app. El Site URL de Auth debe ser la URL pública `/app/`; los enlaces de confirmación no deben apuntar a localhost. Si se cambia la longitud o la URL en Supabase, actualizar también la interfaz y verificar ambos correos con un código nuevo. Los códigos anteriores quedan invalidados al solicitar otro.
 
 Para uso comercial, configura también un SMTP propio, el dominio remitente y los límites de entrega del proyecto.
 
