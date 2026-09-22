@@ -1,6 +1,6 @@
 # Protek Sales Module
 
-The real Protek application now lives in `src/app/app`. The historical `/sales` route redirects to `/app`; the sales API remains under `/api/sales` because it represents the commercial bounded context, not a screen URL. The previous static artifacts remain available as design references; they are not the runtime application.
+The connected Sales application is published at the Sites `/app` route. It uses Supabase Auth, the public Data API, and RLS directly from the browser, so its static hosting does not require a server-held secret. The Next implementation in `src/app/app` remains the reference for a future Vercel deployment.
 
 ## What is implemented
 
@@ -22,6 +22,7 @@ The real Protek application now lives in `src/app/app`. The historical `/sales` 
 - RLS policies that isolate every business row by organization membership and module permission. `sales`, `purchases`, `orders`, `quality`, `agent_ai`, `warehouse`, `resources`, `planning`, and `engineering` use `read`, `write`, or `admin` access levels per company.
 - Primary CRUD is inline in the work surface. Popups are reserved for confirmations, destructive operations, and exceptional decisions.
 - The design system uses 12 px as its minimum text size. Supporting text, labels, table metadata, and controls do not fall below this baseline.
+- The Sites app implements the first end-to-end functional slice: email OTP, company onboarding, company selection, inline customer CRUD, offer creation through the `create_sales_offer` database function, and drag-and-drop stage changes through `move_sales_offer_stage`.
 
 Attachment persistence is intentionally kept separate from the form interaction. The current detail experience manages attachments in the offer workspace; production persistence should use a company-scoped Supabase Storage bucket and a `quote_documents` record tied to the canonical quote once remote schema administration is available.
 
@@ -38,13 +39,13 @@ There is no `orders` table inside Sales. A quote is the commercial object; after
 3. Install packages with `npm install`.
 4. Run `npm run dev -- --port 3001` and visit `/app`.
 
-Without a signed-in organization member, the page presents safe visual demo data. API writes are refused until a real Supabase session is present.
+Without a signed-in organization member, the Sites app only presents the OTP access screen. New users create their first company after verification; users with an active membership see only their companies and records.
 
 ## Applying the schema
 
-The migration is [20260918014800_create_sales_foundation.sql](../supabase/migrations/20260918014800_create_sales_foundation.sql). It has not been applied to the remote project because API keys cannot administer schema changes.
+The remote project has the foundation, workflow, and Sales RPC migrations applied: [20260918014800_create_sales_foundation.sql](../supabase/migrations/20260918014800_create_sales_foundation.sql), [20260918142146_add_offer_workflow_fields.sql](../supabase/migrations/20260918142146_add_offer_workflow_fields.sql), [20260922180903_add_sales_offer_rpc.sql](../supabase/migrations/20260922180903_add_sales_offer_rpc.sql), and [20260922181012_add_sales_offer_stage_rpc.sql](../supabase/migrations/20260922181012_add_sales_offer_stage_rpc.sql).
 
-Use a short-lived Supabase personal access token or database password, then run:
+For a new environment, link the target project and apply the same migration sequence:
 
 ```bash
 supabase link --project-ref zdwkjdbjwwxenwmdrzgq
@@ -52,7 +53,11 @@ supabase db push
 supabase db advisors
 ```
 
-After the first user signs in, call `public.create_organization(name, slug)` from the authenticated onboarding flow. It creates an owner membership and initializes the commercial pipeline.
+After the first user signs in, the Sites onboarding calls `public.create_organization(name, slug)`. It creates an owner membership and initializes the commercial pipeline.
+
+## OTP email setup
+
+Configure Supabase Auth's Magic Link template to include `{{ .Token }}` so `signInWithOtp` sends a code that the user can enter in Protek. Set the public Sites origin as the project Site URL and configure an SMTP provider before inviting real customer teams.
 
 ## Verification after deployment
 

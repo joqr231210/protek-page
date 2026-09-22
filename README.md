@@ -55,11 +55,23 @@ protek-page/
 └── styles.css
 ```
 
+## App funcional en Sites
+
+La ruta pública /app es una aplicación funcional de Ventas conectada a Supabase. Incluye acceso por código OTP de correo, onboarding de empresa, permisos de propietario, clientes editables, ofertas persistentes y un tablero comercial que actualiza etapa, estatus e historial.
+
+El primer usuario que entra crea su empresa. Ese registro inicializa su pipeline comercial y los permisos de propietario para los módulos.
+
+### Configuración requerida para OTP
+
+En Supabase, configura el template Magic Link de Auth para que su contenido incluya el texto {{ .Token }}. Supabase envía un enlace mágico por defecto aunque se invoque signInWithOtp; incluir esa variable habilita el código de un solo uso que pide Protek.
+
+Para uso comercial, configura también un SMTP propio, el dominio remitente y los límites de entrega del proyecto.
+
 ## Despliegue
 
 La aplicación conectada se despliega en Vercel y usa las variables de entorno de Supabase indicadas en `.env.example`. Las migraciones se aplican desde un entorno administrativo de Supabase; las claves de aplicación no administran el esquema.
 
-La carpeta `out/` contiene una versión estática e interactiva para Sites. Es una demo comercial: no persiste información de clientes, órdenes u ofertas. La aplicación productiva requiere aplicar la migración, autenticar usuarios y completar los módulos según el plan de desarrollo.
+La carpeta out/ contiene la landing y la aplicación estática servida por Sites. La ruta /app usa directamente la clave publicable de Supabase y RLS para persistir información de Ventas; no contiene claves secretas. Las migraciones de supabase/migrations/ deben aplicarse antes de habilitar nuevos entornos.
 
 ## Notas
 
