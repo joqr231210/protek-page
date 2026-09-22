@@ -5,6 +5,34 @@ const label = { workshop: "Servicio en taller", field: "Servicio en campo", part
 
 function esc(value) { return String(value || "").replace(/[&<>"']/g, function (char) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]; }); }
 function money(value, code) { return new Intl.NumberFormat("es-MX", { style: "currency", currency: code || "MXN", maximumFractionDigits: 2 }).format(Number(value || 0)); }
+function moneyPrefix(code) { return ({ MXN: "$", USD: "US$", EUR: "€" })[code] || code; }
+function formatMoneyInput(value) { return new Intl.NumberFormat("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
+function parseMoneyInput(value) {
+  const raw = String(value || "").trim().replace(/[^0-9.,-]/g, "");
+  if (!/^-?\d[\d.,]*$/.test(raw)) return NaN;
+  const negative = raw.startsWith("-");
+  const unsigned = negative ? raw.slice(1) : raw;
+  const comma = unsigned.lastIndexOf(",");
+  const dot = unsigned.lastIndexOf(".");
+  let decimalIndex = -1;
+  if (comma >= 0 && dot >= 0) decimalIndex = Math.max(comma, dot);
+  else if (comma >= 0 || dot >= 0) {
+    const index = Math.max(comma, dot);
+    const decimals = unsigned.length - index - 1;
+    if (decimals === 1 || decimals === 2) decimalIndex = index;
+    else if (decimals !== 3) return NaN;
+  }
+  const integer = decimalIndex >= 0 ? unsigned.slice(0, decimalIndex) : unsigned;
+  const fraction = decimalIndex >= 0 ? unsigned.slice(decimalIndex + 1) : "";
+  if (decimalIndex >= 0 && !/^\d{1,2}$/.test(fraction)) return NaN;
+  const grouping = integer.match(/[.,]/);
+  if (grouping) {
+    const groups = integer.split(grouping[0]);
+    if (!groups[0] || groups[0].length > 3 || groups.slice(1).some(function (group) { return group.length !== 3; }) || /\D/.test(groups.join(""))) return NaN;
+  } else if (!/^\d+$/.test(integer)) return NaN;
+  const result = Number(integer.replace(/[.,]/g, "") + (fraction ? "." + fraction : ""));
+  return negative ? -result : result;
+}
 function compact(value, code) { const prefix = code === "USD" ? "US$" : code === "EUR" ? "EUR " : "$"; return Number(value || 0) > 999999 ? prefix + (Number(value) / 1000000).toFixed(2) + "M" : Number(value || 0) > 999 ? prefix + Math.round(Number(value) / 1000) + "K" : money(value, code); }
 function initials(value) { return String(value || "P").split(/\s+/).slice(0, 2).map(function (part) { return part[0]; }).join("").toUpperCase(); }
 function setNotice(message) { app.notice = message; app.error = ""; }
@@ -138,7 +166,7 @@ async function loadSales() {
   const results = await Promise.all([
     client.from("pipeline_stages").select("id, stage_key, name, position, is_closed, outcome").eq("organization_id", org).order("position"),
     client.from("customers").select("id, display_name, legal_name, tax_id, account_code, status").eq("organization_id", org).is("archived_at", null).order("display_name"),
-    client.from("organization_members").select("user_id, profiles(display_name)").eq("organization_id", org).eq("status", "active"),
+    client.from("organization_members").select("user_id").eq("organization_id", org).eq("status", "active"),
     client.from("sales_opportunities").select("id, customer_id, title, service_mode, estimated_revenue, stage_id, owner_id, updated_at").eq("organization_id", org).is("archived_at", null).order("updated_at", { ascending: false }),
     client.from("quotes").select("id, quote_number, customer_id, opportunity_id, title, notes, service_mode, currency_code, subtotal, total_amount, status, updated_at, valid_until").eq("organization_id", org).is("archived_at", null).order("updated_at", { ascending: false })
   ]);
@@ -146,7 +174,7 @@ async function loadSales() {
   if (failed) { setError(failed.error); renderApp(); return; }
   app.stages = results[0].data || [];
   app.customers = results[1].data || [];
-  app.members = (results[2].data || []).map(function (member) { const profile = Array.isArray(member.profiles) ? member.profiles[0] : member.profiles; return { id: member.user_id, name: profile && profile.display_name || "Usuario" }; });
+  app.members = (results[2].data || []).map(function (member) { return { id: member.user_id, name: member.user_id === app.user.id ? app.profile.display_name : "Usuario" }; });
   app.opportunities = results[3].data || [];
   const customerNames = new Map(app.customers.map(function (customer) { return [customer.id, customer.display_name]; }));
   const opportunities = new Map(app.opportunities.map(function (opportunity) { return [opportunity.id, opportunity]; }));
@@ -246,7 +274,38 @@ async function createQuickCustomer() {
   showToast("Cliente creado y seleccionado para esta oferta.");
 }
 function renderOfferForm() {
-  return '<section class="live-form-wrap"><h2>Nueva oferta</h2><p>La oferta crea una oportunidad y conserva el historial comercial desde el primer registro.</p><form class="live-form" id="offer-form"><label class="wide">Nombre de la oferta<input name="title" required minlength="3" placeholder="Ej. Overhaul de motor Cummins QSK19"></label><div class="customer-picker" id="offer-customer-picker"><label for="offer-customer-search">Cliente</label><div class="customer-search-wrap"><input id="offer-customer-search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="offer-customer-options" autocomplete="off" placeholder="Buscar cliente o registrar uno"><div class="customer-options" id="offer-customer-options" role="listbox" hidden></div></div><input type="hidden" id="offer-customer-id" name="customerId"><span class="customer-field-error" id="offer-customer-error" role="alert"></span><div class="quick-customer-fields" id="quick-customer-fields" hidden><strong>Nuevo cliente</strong><label for="quick-customer-name">Nombre comercial<input id="quick-customer-name" minlength="2" maxlength="160" placeholder="Nombre del cliente"></label><label for="quick-customer-legal">Razón social <span>(opcional)</span><input id="quick-customer-legal" placeholder="Razón social"></label><label for="quick-customer-tax">RFC <span>(opcional)</span><input id="quick-customer-tax" placeholder="RFC"></label><span class="customer-field-error" id="quick-customer-error" role="alert"></span><div class="quick-customer-actions"><button class="subtle-button" id="quick-customer-cancel" type="button">Cancelar</button><button class="live-secondary" id="quick-customer-save" type="button">Registrar y seleccionar</button></div></div></div><label>Tipo de oferta<select name="serviceMode"><option value="workshop">Servicio en taller</option><option value="field">Servicio en campo</option><option value="parts">Refaccionamiento</option></select></label><label>Moneda<select name="currencyCode"><option value="MXN">MXN · Peso mexicano</option><option value="USD">USD · Dólar estadounidense</option><option value="EUR">EUR · Euro</option></select></label><label>Vigencia<input name="validUntil" type="date"></label><label>Valor antes de impuestos<input name="subtotal" inputmode="decimal" placeholder="0.00" required></label><label>Valor total con impuestos<input name="totalAmount" inputmode="decimal" placeholder="0.00" required></label><label class="wide">Notas<input name="notes" placeholder="Alcance, condición reportada o consideraciones"></label><p class="customer-field-error wide" id="offer-form-error" role="alert"></p><div class="live-form-actions"><button class="live-secondary" type="button" data-hide-offer>Cancelar</button><button class="live-primary" type="submit">Crear oferta</button></div></form></section>';
+  return `<section class="live-form-wrap">
+    <h2>Nueva oferta</h2>
+    <p>La oferta crea una oportunidad y conserva el historial comercial desde el primer registro.</p>
+    <form class="live-form" id="offer-form">
+      <label class="wide">Nombre de la oferta<input name="title" required minlength="3" placeholder="Ej. Overhaul de motor Cummins QSK19"></label>
+      <div class="customer-picker" id="offer-customer-picker">
+        <label for="offer-customer-search">Cliente</label>
+        <div class="customer-search-wrap">
+          <input id="offer-customer-search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="offer-customer-options" autocomplete="off" placeholder="Buscar cliente o registrar uno">
+          <div class="customer-options" id="offer-customer-options" role="listbox" hidden></div>
+        </div>
+        <input type="hidden" id="offer-customer-id" name="customerId">
+        <span class="customer-field-error" id="offer-customer-error" role="alert"></span>
+        <div class="quick-customer-fields" id="quick-customer-fields" hidden>
+          <strong>Nuevo cliente</strong>
+          <label for="quick-customer-name">Nombre comercial<input id="quick-customer-name" minlength="2" maxlength="160" placeholder="Nombre del cliente"></label>
+          <label for="quick-customer-legal">Razón social <span>(opcional)</span><input id="quick-customer-legal" placeholder="Razón social"></label>
+          <label for="quick-customer-tax">RFC <span>(opcional)</span><input id="quick-customer-tax" placeholder="RFC"></label>
+          <span class="customer-field-error" id="quick-customer-error" role="alert"></span>
+          <div class="quick-customer-actions"><button class="subtle-button" id="quick-customer-cancel" type="button">Cancelar</button><button class="live-secondary" id="quick-customer-save" type="button">Registrar y seleccionar</button></div>
+        </div>
+      </div>
+      <label>Tipo de oferta<select name="serviceMode"><option value="workshop">Servicio en taller</option><option value="field">Servicio en campo</option><option value="parts">Refaccionamiento</option></select></label>
+      <label>Moneda<select name="currencyCode" id="offer-currency"><option value="MXN">MXN · Peso mexicano</option><option value="USD">USD · Dólar estadounidense</option><option value="EUR">EUR · Euro</option></select></label>
+      <label>Vigencia<input name="validUntil" type="date"></label>
+      <label>Valor antes de impuestos<span class="money-input"><span data-currency-prefix>MXN $</span><input name="subtotal" inputmode="decimal" data-money-input placeholder="0.00" required></span></label>
+      <label>Valor total con impuestos<span class="money-input"><span data-currency-prefix>MXN $</span><input name="totalAmount" inputmode="decimal" data-money-input placeholder="0.00" required></span></label>
+      <label class="wide">Notas<input name="notes" placeholder="Alcance, condición reportada o consideraciones"></label>
+      <p class="customer-field-error wide" id="offer-form-error" role="alert"></p>
+      <div class="live-form-actions"><button class="live-secondary" type="button" data-hide-offer>Cancelar</button><button class="live-primary" type="submit">Crear oferta</button></div>
+    </form>
+  </section>`;
 }
 function renderOffers() { return app.showOfferForm ? renderOfferForm() : renderFilters() + renderTable(filteredQuotes(), "Ofertas"); }
 function renderBoard() {
@@ -279,6 +338,17 @@ function bindEvents() {
   if (hideOffer) hideOffer.addEventListener("click", function () { app.showOfferForm = false; renderApp(); });
   const offerForm = root.querySelector("#offer-form");
   if (offerForm) offerForm.addEventListener("submit", saveOffer);
+  const currencySelect = root.querySelector("#offer-currency");
+  if (currencySelect) currencySelect.addEventListener("change", function () {
+    root.querySelectorAll("[data-currency-prefix]").forEach(function (prefix) { prefix.textContent = currencySelect.value + " " + moneyPrefix(currencySelect.value); });
+  });
+  root.querySelectorAll("[data-money-input]").forEach(function (input) {
+    input.addEventListener("blur", function () {
+      const value = parseMoneyInput(input.value);
+      if (Number.isFinite(value) && value >= 0) input.value = formatMoneyInput(value);
+    });
+    input.addEventListener("input", function () { root.querySelector("#offer-form-error").textContent = ""; });
+  });
   const customerSearch = root.querySelector("#offer-customer-search");
   if (customerSearch) {
     customerSearch.addEventListener("focus", showCustomerResults);
@@ -349,12 +419,24 @@ async function saveOffer(event) {
     root.querySelector("#offer-customer-search").focus();
     return;
   }
-  const parseNumber = function (name) { return Number(String(form.get(name) || "0").replace(/[^0-9.-]/g, "")); };
+  const subtotal = parseMoneyInput(form.get("subtotal"));
+  const total = parseMoneyInput(form.get("totalAmount"));
+  const amountError = root.querySelector("#offer-form-error");
+  if (![subtotal, total].every(function (value) { return Number.isFinite(value) && value >= 0 && value <= 999999999999.99; })) {
+    amountError.textContent = "Revisa los importes. Usa un valor positivo con hasta dos decimales.";
+    event.currentTarget.querySelector('[name="subtotal"]').focus();
+    return;
+  }
+  if (total < subtotal) {
+    amountError.textContent = "El valor total con impuestos debe ser igual o mayor que el valor antes de impuestos.";
+    event.currentTarget.querySelector('[name="totalAmount"]').focus();
+    return;
+  }
   const button = event.currentTarget.querySelector('button[type="submit"]');
   button.disabled = true;
-  const result = await client.rpc("create_sales_offer", { p_organization_id: app.organizationId, p_customer_id: customerId, p_title: String(form.get("title") || "").trim(), p_service_mode: String(form.get("serviceMode") || "workshop"), p_currency_code: String(form.get("currencyCode") || "MXN"), p_subtotal: parseNumber("subtotal"), p_total_amount: parseNumber("totalAmount"), p_valid_until: String(form.get("validUntil") || "") || null, p_notes: String(form.get("notes") || "").trim() || null });
+  const result = await client.rpc("create_sales_offer", { p_organization_id: app.organizationId, p_customer_id: customerId, p_title: String(form.get("title") || "").trim(), p_service_mode: String(form.get("serviceMode") || "workshop"), p_currency_code: String(form.get("currencyCode") || "MXN"), p_subtotal: subtotal, p_total_amount: total, p_valid_until: String(form.get("validUntil") || "") || null, p_notes: String(form.get("notes") || "").trim() || null });
   button.disabled = false;
-  if (result.error) { root.querySelector("#offer-form-error").textContent = result.error.message || "No se pudo crear la oferta."; return; }
+  if (result.error) { amountError.textContent = result.error.message === "Offer totals are invalid" ? "El valor total con impuestos debe ser igual o mayor que el valor antes de impuestos." : result.error.message || "No se pudo crear la oferta."; return; }
   app.showOfferForm = false;
   setNotice("Oferta Q-" + (result.data && result.data[0] && result.data[0].quote_number || "") + " creada.");
   await loadSales();

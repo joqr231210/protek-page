@@ -17,7 +17,7 @@
     let nextQuoteId = 1;
     class Query {
       constructor(table) { this.table = table; }
-      select() { return this; }
+      select(fields) { if (this.table === "organization_members" && fields.includes("profiles(")) this.relationshipError = true; return this; }
       eq(field, value) { if (field === "id") this.rowId = value; return this; }
       is() { return this; }
       order() { return this; }
@@ -45,7 +45,7 @@
           sales_opportunities: opportunities,
           quotes
         }[this.table] || [];
-        return Promise.resolve({ data: Array.isArray(data) ? [...data] : data, error: null }).then(resolve, reject);
+        return Promise.resolve(this.relationshipError ? { data: null, error: new Error("Could not find a relationship between organization_members and profiles") } : { data: Array.isArray(data) ? [...data] : data, error: null }).then(resolve, reject);
       }
     }
     window.supabase = { createClient: () => ({
@@ -53,6 +53,7 @@
       from: (table) => new Query(table),
       rpc: async (name, args) => {
         if (name !== "create_sales_offer") return { error: new Error("RPC no simulada") };
+        if (args.p_total_amount < args.p_subtotal) return { error: new Error("Offer totals are invalid") };
         const id = nextQuoteId++;
         opportunities.push({ id, customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, estimated_revenue: args.p_total_amount, stage_id: 1, owner_id: "qa", updated_at: new Date().toISOString() });
         quotes.push({ id, quote_number: id, opportunity_id: id, customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, currency_code: args.p_currency_code, subtotal: args.p_subtotal, total_amount: args.p_total_amount, status: "draft", updated_at: new Date().toISOString(), valid_until: null });
