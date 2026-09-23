@@ -1,6 +1,6 @@
 const root = document.querySelector("#app-root");
 const client = window.supabase.createClient("https://zdwkjdbjwwxenwmdrzgq.supabase.co", "sb_publishable_JF2LRShpTvvTLv_0oZNTJA_lCqJFOub");
-const app = { user: null, profile: null, organizations: [], organizationId: Number(localStorage.getItem("protek.activeOrganization") || 0), stages: [], customers: [], members: [], opportunities: [], quotes: [], view: "summary", settingsPath: [], authEmail: "", authMode: "login", authStep: "email", authRequestedAt: 0, notice: "", error: "", showOfferForm: false, quoteDetailId: null, customerEditorId: null, customerSearch: "", canManageStages: false, filters: { search: "", customerId: "", serviceMode: "" } };
+const app = { user: null, profile: null, organizations: [], organizationId: Number(localStorage.getItem("protek.activeOrganization") || 0), stages: [], customers: [], members: [], opportunities: [], quotes: [], view: "summary", settingsPath: [], authEmail: "", authMode: "login", authStep: "email", authRequestedAt: 0, notice: "", error: "", showOfferForm: false, quoteDetailId: null, customerEditorId: null, customerSearch: "", canManageStages: false, filters: { search: "", customerId: "", serviceMode: "", status: "" } };
 const label = { workshop: "Servicio en taller", field: "Servicio en campo", parts: "Refaccionamiento", draft: "Borrador", pending_approval: "Por autorizar", sent: "Oferta enviada", negotiation: "Negociación", approved: "Autorizada", rejected: "Rechazada" };
 
 function esc(value) { return String(value || "").replace(/[&<>"']/g, function (char) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]; }); }
@@ -42,12 +42,18 @@ function setError(error) { app.error = error && error.message ? error.message : 
 function currentOrganization() { return app.organizations.find(function (item) { return item.id === app.organizationId; }); }
 function visibleStages() { return app.stages.filter(function (stage) { return stage.outcome !== "lost" && stage.is_visible; }).slice(0, 5); }
 function quoteStatus(stage) { return ({ new: "draft", diagnosis: "pending_approval", quoted: "sent", negotiation: "negotiation", won: "approved", lost: "rejected" })[stage] || "draft"; }
-function openQuotes() { return app.quotes.filter(function (quote) { return !["approved", "rejected"].includes(quote.status); }); }
+function activeQuotes() { return app.quotes.filter(function (quote) { return !quote.archived_at; }); }
+function openQuotes() { return activeQuotes().filter(function (quote) { return !["approved", "rejected", "cancelled"].includes(quote.status); }); }
+function quoteState(quote) { return quote.archived_at ? "Archivada" : quote.stageName; }
+function quoteStateColor(quote) { return quote.archived_at ? "#888890" : quote.stageColor || "#8B8B91"; }
+function renderStatusPill(quote) { return '<em class="live-status stage-status' + (quote.archived_at ? ' is-archived' : '') + '" style="--stage-color:' + esc(quoteStateColor(quote)) + '">' + esc(quoteState(quote)) + '</em>'; }
 function filteredQuotes() {
   const text = app.filters.search.trim().toLowerCase();
-  return app.quotes.filter(function (quote) {
-    const searchable = [quote.title, quote.customerName, quote.quote_number, quote.stageName].join(" ").toLowerCase();
-    return (!text || searchable.includes(text)) && (!app.filters.customerId || quote.customer_id === Number(app.filters.customerId)) && (!app.filters.serviceMode || quote.service_mode === app.filters.serviceMode);
+  const source = app.view === "board" ? activeQuotes() : app.quotes;
+  return source.filter(function (quote) {
+    const searchable = [quote.title, quote.customerName, quote.quote_number, quoteState(quote)].join(" ").toLowerCase();
+    const status = app.view === "offers" ? app.filters.status : "";
+    return (!text || searchable.includes(text)) && (!app.filters.customerId || quote.customer_id === Number(app.filters.customerId)) && (!app.filters.serviceMode || quote.service_mode === app.filters.serviceMode) && (!status || status === "archived" && !!quote.archived_at || status === "stage:" + quote.stageId && !quote.archived_at);
   });
 }
 function authError(error) {
@@ -183,11 +189,11 @@ async function loadWorkspace() {
 async function loadSales() {
   const org = app.organizationId;
   const results = await Promise.all([
-    client.from("pipeline_stages").select("id, stage_key, name, position, is_closed, outcome, is_visible").eq("organization_id", org).order("position"),
+    client.from("pipeline_stages").select("id, stage_key, name, position, is_closed, outcome, is_visible, color_code").eq("organization_id", org).order("position"),
     client.from("customers").select("id, display_name, legal_name, tax_id, account_code, status").eq("organization_id", org).is("archived_at", null).order("display_name"),
     client.from("organization_members").select("user_id").eq("organization_id", org).eq("status", "active"),
-    client.from("sales_opportunities").select("id, customer_id, title, service_mode, estimated_revenue, stage_id, owner_id, updated_at").eq("organization_id", org).is("archived_at", null).order("updated_at", { ascending: false }),
-    client.from("quotes").select("id, quote_number, customer_id, opportunity_id, title, notes, service_mode, currency_code, subtotal, total_amount, status, updated_at, valid_until").eq("organization_id", org).is("archived_at", null).order("updated_at", { ascending: false }),
+    client.from("sales_opportunities").select("id, customer_id, title, service_mode, estimated_revenue, stage_id, owner_id, updated_at, archived_at").eq("organization_id", org).order("updated_at", { ascending: false }),
+    client.from("quotes").select("id, quote_number, customer_id, opportunity_id, title, notes, service_mode, currency_code, subtotal, total_amount, status, updated_at, valid_until, archived_at").eq("organization_id", org).order("updated_at", { ascending: false }),
     client.from("organization_member_module_permissions").select("access_level").eq("organization_id", org).eq("organization_member_id", currentOrganization().memberId).eq("module_key", "sales").maybeSingle()
   ]);
   const failed = results.find(function (result) { return result.error; });
@@ -204,7 +210,7 @@ async function loadSales() {
   app.quotes = (results[4].data || []).map(function (quote) {
     const opportunity = opportunities.get(quote.opportunity_id);
     const stage = stages.get(opportunity && opportunity.stage_id);
-    return Object.assign({}, quote, { customerName: customerNames.get(quote.customer_id) || "Cliente sin nombre", stageId: stage && stage.id || null, stageKey: stage && stage.stage_key || "new", stageName: stage && stage.name || "Nueva oportunidad", responsibleName: opportunity && opportunity.owner_id ? memberNames.get(opportunity.owner_id) || "Usuario" : "Sin responsable" });
+    return Object.assign({}, quote, { customerName: customerNames.get(quote.customer_id) || "Cliente sin nombre", stageId: stage && stage.id || null, stageKey: stage && stage.stage_key || "new", stageName: stage && stage.name || "Nueva oportunidad", stageColor: stage && stage.color_code || "#8B8B91", responsibleName: opportunity && opportunity.owner_id ? memberNames.get(opportunity.owner_id) || "Usuario" : "Sin responsable" });
   });
   renderApp();
 }
@@ -227,40 +233,53 @@ function renderWorkspace() {
   return '<section class="live-heading"><div><h1>' + heading[0] + '</h1><p>' + heading[1] + '</p></div><div class="live-heading-actions">' + action + '</div></section><nav class="live-tabs" aria-label="Secciones de Ventas">' + [["summary", "Resumen"], ["offers", "Ofertas"], ["board", "Tablero"], ["customers", "Clientes"]].map(function (item) { return '<button type="button" data-view="' + item[0] + '" class="' + (app.view === item[0] ? "active" : "") + '">' + item[1] + '</button>'; }).join("") + '</nav>' + (app.view === "summary" ? renderSummary() : app.view === "offers" ? renderOffers() : app.view === "board" ? renderBoard() : renderCustomers());
 }
 
+function amountByCurrency(quotes) {
+  const amounts = new Map();
+  quotes.forEach(function (quote) { const code = quote.currency_code || "MXN"; amounts.set(code, (amounts.get(code) || 0) + Number(quote.total_amount || 0)); });
+  return Array.from(amounts, function (entry) { return { code: entry[0], amount: entry[1] }; });
+}
+function renderAmounts(quotes) {
+  const amounts = amountByCurrency(quotes);
+  return amounts.length ? amounts.map(function (item) { return '<span>' + compact(item.amount, item.code) + '</span>'; }).join("") : '<span>' + money(0, "MXN") + '</span>';
+}
 function renderSummary() {
   const open = openQuotes();
-  const stages = visibleStages();
-  const pipeline = app.opportunities.filter(function (item) { return stages.some(function (stage) { return stage.id === item.stage_id && !stage.is_closed; }); }).reduce(function (sum, item) { return sum + Number(item.estimated_revenue || 0); }, 0);
+  const stages = visibleStages().filter(function (stage) { return !stage.is_closed; });
+  const pipelineQuotes = activeQuotes().filter(function (quote) { return stages.some(function (stage) { return stage.id === quote.stageId; }); });
   const stale = open.filter(function (quote) { return Date.now() - new Date(quote.updated_at).getTime() > 30 * 86400000; }).length;
   const expiring = open.filter(function (quote) { return quote.valid_until && new Date(quote.valid_until + "T23:59:59").getTime() - Date.now() < 7 * 86400000; }).length;
-  const totals = stages.map(function (stage) { return { stage: stage, total: app.quotes.filter(function (quote) { return quote.stageId === stage.id; }).reduce(function (sum, quote) { return sum + Number(quote.total_amount || 0); }, 0) }; });
-  const max = Math.max.apply(Math, totals.map(function (item) { return item.total; }).concat([1]));
-  return '<section class="live-kpis"><article class="live-kpi"><span>PIPELINE ACTIVO</span><strong>' + compact(pipeline) + '</strong><small>Etapas visibles no cerradas</small></article><article class="live-kpi"><span>OFERTAS ABIERTAS</span><strong>' + open.length + '</strong><small>En seguimiento comercial</small></article><article class="live-kpi"><span>OFERTAS PENDIENTES</span><strong>' + stale + '</strong><small>Sin actualización en 30 días</small></article><article class="live-kpi"><span>POR VENCER</span><strong>' + expiring + '</strong><small>Requieren seguimiento</small></article></section><section class="live-grid"><article class="live-panel"><span class="live-label">PIPELINE POR ETAPA</span><h2>' + compact(pipeline) + '</h2><div class="live-bars">' + (totals.length ? totals.map(function (item) { return '<div class="live-bar"><span>' + esc(item.stage.name) + '</span><i><b style="width:' + Math.max(2, item.total / max * 100) + '%"></b></i><em>' + compact(item.total) + '</em></div>'; }).join("") : '<p class="empty-state">No hay etapas visibles.</p>') + '</div></article><article class="live-panel"><span class="live-label">SIGUIENTE PASO</span><h2>' + (open.length ? "Da seguimiento a una oferta abierta." : "Crea tu primera oferta.") + '</h2><p style="color:var(--muted);line-height:1.55">El tablero, los clientes y las ofertas se guardan en la empresa activa.</p></article></section>' + renderTable(app.quotes.slice(0, 10), "Últimas ofertas actualizadas");
+  const totals = stages.map(function (stage) { return { stage: stage, quotes: pipelineQuotes.filter(function (quote) { return quote.stageId === stage.id; }) }; });
+  const max = Math.max.apply(Math, totals.map(function (item) { return item.quotes.length; }).concat([1]));
+  const bars = totals.length ? totals.map(function (item) { return '<div class="live-bar"><span>' + esc(item.stage.name) + '</span><i><b style="width:' + Math.max(2, item.quotes.length / max * 100) + '%;background:' + esc(item.stage.color_code) + '"></b></i><em>' + item.quotes.length + '</em></div>'; }).join("") : '<p class="empty-state">No hay etapas activas visibles.</p>';
+  const funnel = totals.length ? totals.map(function (item, index) { return '<div class="funnel-stage" style="--stage-color:' + esc(item.stage.color_code) + ';--funnel-width:' + Math.max(74, 100 - index * 7) + '%"><div class="funnel-stage-top"><strong>' + esc(item.stage.name) + '</strong><span>' + item.quotes.length + ' ofertas</span></div><div class="funnel-values">' + renderAmounts(item.quotes) + '</div></div>'; }).join("") : '<p class="empty-state">No hay etapas activas visibles.</p>';
+  return '<section class="live-kpis"><article class="live-kpi"><span>PIPELINE ACTIVO</span><strong class="summary-amounts">' + renderAmounts(pipelineQuotes) + '</strong><small>Importes por moneda, sin conversión</small></article><article class="live-kpi"><span>OFERTAS ABIERTAS</span><strong>' + open.length + '</strong><small>En seguimiento comercial</small></article><article class="live-kpi"><span>OFERTAS PENDIENTES</span><strong>' + stale + '</strong><small>Sin actualización en 30 días</small></article><article class="live-kpi"><span>POR VENCER</span><strong>' + expiring + '</strong><small>Requieren seguimiento</small></article></section><section class="live-grid"><article class="live-panel"><span class="live-label">PIPELINE POR ETAPA</span><h2>' + pipelineQuotes.length + ' ofertas en curso</h2><div class="live-bars">' + bars + '</div></article><article class="live-panel funnel-panel"><span class="live-label">EMBUDO COMERCIAL</span><h2>Valor por etapa</h2><div class="funnel-list">' + funnel + '</div></article></section>' + renderTable(app.quotes.slice(0, 10), "Últimas ofertas actualizadas");
 }
 
 function renderSettings() {
   const stages = app.stages.filter(function (stage) { return stage.outcome !== "lost"; }).slice(0, 5);
   const level = app.settingsPath.length;
   const names = ["Ajustes", "Ventas", "Ofertas", "Estatus de ofertas"];
-  const descriptions = ["Configura los módulos de tu empresa.", "Configuración del módulo comercial.", "Define cómo se organizan tus ofertas.", "Nombra y muestra las etapas del tablero comercial."];
+  const descriptions = ["Configura los módulos de tu empresa.", "Configuración del módulo comercial.", "Define cómo se organizan tus ofertas.", "Nombra, colorea y muestra las etapas del tablero comercial."];
   const heading = '<section class="live-heading"><div><h1>' + names[level] + '</h1><p>' + descriptions[level] + '</p></div></section>';
   if (level < 3) {
     const next = ["Ventas", "Ofertas", "Estatus de ofertas"][level];
-    const detail = ["Clientes, ofertas y pipeline comercial", "Flujo de cotización y seguimiento", "Hasta cinco etapas; nombre y visibilidad"][level];
+    const detail = ["Clientes, ofertas y pipeline comercial", "Flujo de cotización y seguimiento", "Hasta cinco etapas; nombre, color y visibilidad"][level];
     return heading + '<section class="settings-index"><button class="settings-index-link" type="button" data-settings-next><span><strong>' + next + '</strong><small>' + detail + '</small></span><span aria-hidden="true">→</span></button></section>';
   }
-  return heading + '<section class="live-surface settings-surface"><div class="live-surface-head"><b>Etapas del tablero</b><span class="live-label">' + stages.length + ' DE 5 ETAPAS</span></div><p class="settings-note">Los cambios también se reflejan en el pipeline del Resumen. Las ofertas de una etapa oculta siguen disponibles en Ofertas.</p><div class="stage-settings-list">' + stages.map(function (stage, index) { return '<form class="stage-settings-row" data-stage-form="' + stage.id + '"><span class="stage-position">' + String(index + 1).padStart(2, "0") + '</span><label>Nombre de la etapa<input name="name" value="' + esc(stage.name) + '" minlength="2" maxlength="80" required ' + (app.canManageStages ? "" : "disabled") + '></label><label class="stage-visibility"><input name="isVisible" type="checkbox" ' + (stage.is_visible ? "checked" : "") + ' ' + (app.canManageStages ? "" : "disabled") + '><span>Visible</span></label>' + (app.canManageStages ? '<button class="live-secondary" type="submit">Guardar</button>' : '') + '</form>'; }).join("") + '</div>' + (app.canManageStages ? '' : '<p class="settings-note">Necesitas permiso de administración de Ventas para modificar las etapas.</p>') + '</section>';
+  return heading + '<section class="live-surface settings-surface"><div class="live-surface-head"><b>Etapas del tablero</b><span class="live-label">' + stages.length + ' DE 5 ETAPAS</span></div><p class="settings-note">Los cambios también se reflejan en el pipeline del Resumen. Las ofertas de una etapa oculta siguen disponibles en Ofertas.</p><div class="stage-settings-list">' + stages.map(function (stage, index) { return '<form class="stage-settings-row" data-stage-form="' + stage.id + '"><span class="stage-position">' + String(index + 1).padStart(2, "0") + '</span><label>Nombre de la etapa<input name="name" value="' + esc(stage.name) + '" minlength="2" maxlength="80" required ' + (app.canManageStages ? "" : "disabled") + '></label><label class="stage-color-label">Color<input name="colorCode" type="color" value="' + esc(stage.color_code || '#8B8B91') + '" ' + (app.canManageStages ? "" : "disabled") + '></label><label class="stage-visibility"><input name="isVisible" type="checkbox" ' + (stage.is_visible ? "checked" : "") + ' ' + (app.canManageStages ? "" : "disabled") + '><span>Visible</span></label>' + (app.canManageStages ? '<button class="live-secondary" type="submit">Guardar</button>' : '') + '</form>'; }).join("") + '</div>' + (app.canManageStages ? '' : '<p class="settings-note">Necesitas permiso de administración de Ventas para modificar las etapas.</p>') + '</section>';
 }
 function renderSettingsBreadcrumb() {
   const parts = ["Ajustes"].concat(app.settingsPath);
   return parts.map(function (name, index) { return index === parts.length - 1 ? '<b>' + name + '</b>' : '<button type="button" data-settings-level="' + index + '">' + name + '</button> / '; }).join("");
 }
 
-function renderFilters() {
-  return '<div class="live-filters"><input class="offer-filter" type="search" id="quote-search" aria-label="Buscar ofertas" value="' + esc(app.filters.search) + '" placeholder="Buscar oferta o cliente"><select class="offer-filter" id="quote-customer"><option value="">Todos los clientes</option>' + app.customers.map(function (customer) { return '<option value="' + customer.id + '" ' + (String(customer.id) === app.filters.customerId ? "selected" : "") + '>' + esc(customer.display_name) + '</option>'; }).join("") + '</select><select class="offer-filter" id="quote-service"><option value="">Todos los tipos</option><option value="workshop" ' + (app.filters.serviceMode === "workshop" ? "selected" : "") + '>Servicio en taller</option><option value="field" ' + (app.filters.serviceMode === "field" ? "selected" : "") + '>Servicio en campo</option><option value="parts" ' + (app.filters.serviceMode === "parts" ? "selected" : "") + '>Refaccionamiento</option></select><button class="live-secondary" type="button" id="clear-filters">Limpiar</button></div>';
+function renderFilters(showStatus = false) {
+  const status = showStatus ? '<select class="offer-filter" id="quote-status" aria-label="Filtrar por estatus"><option value="">Todos los estatus</option>' + app.stages.map(function (stage) { return '<option value="stage:' + stage.id + '" ' + (app.filters.status === 'stage:' + stage.id ? 'selected' : '') + '>' + esc(stage.name) + '</option>'; }).join('') + '<option value="archived" ' + (app.filters.status === 'archived' ? 'selected' : '') + '>Archivada</option></select>' : '';
+  return '<div class="live-filters' + (showStatus ? ' with-status' : '') + '"><input class="offer-filter" type="search" id="quote-search" aria-label="Buscar ofertas" value="' + esc(app.filters.search) + '" placeholder="Buscar oferta o cliente"><select class="offer-filter" id="quote-customer"><option value="">Todos los clientes</option>' + app.customers.map(function (customer) { return '<option value="' + customer.id + '" ' + (String(customer.id) === app.filters.customerId ? "selected" : "") + '>' + esc(customer.display_name) + '</option>'; }).join("") + '</select><select class="offer-filter" id="quote-service"><option value="">Todos los tipos</option><option value="workshop" ' + (app.filters.serviceMode === "workshop" ? "selected" : "") + '>Servicio en taller</option><option value="field" ' + (app.filters.serviceMode === "field" ? "selected" : "") + '>Servicio en campo</option><option value="parts" ' + (app.filters.serviceMode === "parts" ? "selected" : "") + '>Refaccionamiento</option></select>' + status + '<button class="live-secondary" type="button" id="clear-filters">Limpiar</button></div>';
 }
-function renderTable(quotes, title) {
-  return '<section class="live-surface"><div class="live-surface-head"><b>' + title + '</b><span class="live-label">' + quotes.length + ' REGISTROS</span></div><div class="live-table"><div class="live-row head"><span>OFERTA</span><span>CLIENTE</span><span>IMPORTE</span><span>ETAPA</span></div>' + (quotes.length ? quotes.map(function (quote) { return '<button class="live-row" type="button" data-quote-id="' + quote.id + '"><span><b>Q-' + quote.quote_number + '</b><small>' + esc(quote.title) + '</small></span><span>' + esc(quote.customerName) + '</span><span>' + money(quote.total_amount, quote.currency_code) + '</span><span><em class="live-status ' + quote.status + '">' + esc(quote.stageName) + '</em></span></button>'; }).join("") : '<div class="empty-state">No hay ofertas con estos filtros.</div>') + '</div></section>';
+function renderTable(quotes, title, showTitle = true) {
+  const heading = showTitle ? '<div class="live-surface-head"><b>' + title + '</b><span class="live-label">' + quotes.length + ' REGISTROS</span></div>' : '';
+  return '<section class="live-surface offers-table">' + heading + '<div class="live-table"><div class="live-row head"><span>OFERTA</span><span>CLIENTE</span><span>IMPORTE</span><span>ESTATUS</span></div>' + (quotes.length ? quotes.map(function (quote) { return '<button class="live-row" type="button" data-quote-id="' + quote.id + '"><span><b>Q-' + quote.quote_number + '</b><small>' + esc(quote.title) + '</small></span><span>' + esc(quote.customerName) + '</span><span>' + money(quote.total_amount, quote.currency_code) + '</span><span>' + renderStatusPill(quote) + '</span></button>'; }).join("") : '<div class="empty-state">No hay ofertas con estos filtros.</div>') + '</div></section>';
 }
 function customerMatches(customer, query) {
   return [customer.display_name, customer.legal_name, customer.tax_id, customer.account_code].some(function (value) { return String(value || "").toLocaleLowerCase("es").includes(query); });
@@ -321,8 +340,8 @@ function renderOfferForm(quote = null) {
   const currency = quote && quote.currency_code || "MXN";
   const option = function (value, selected) { return value === selected ? "selected" : ""; };
   return `<section class="live-form-wrap">
-    <h2>${quote ? "Editar oferta Q-" + quote.quote_number : "Nueva oferta"}</h2>
-    <p>${quote ? "Actualiza la oferta y su oportunidad vinculada." : "La oferta crea una oportunidad y conserva el historial comercial desde el primer registro."}</p>
+    <h2>${quote && quote.archived_at ? "Oferta Q-" + quote.quote_number : quote ? "Editar oferta Q-" + quote.quote_number : "Nueva oferta"}</h2>
+    <p>${quote && quote.archived_at ? "Restaura esta oferta para volver a editarla." : quote ? "Actualiza la oferta y su oportunidad vinculada." : "La oferta crea una oportunidad y conserva el historial comercial desde el primer registro."}</p>
     <form class="live-form" id="offer-form">
       <label class="wide">Nombre de la oferta<input name="title" value="${esc(quote && quote.title)}" required minlength="3" placeholder="Ej. Overhaul de motor Cummins QSK19"></label>
       <div class="customer-picker" id="offer-customer-picker">
@@ -349,21 +368,21 @@ function renderOfferForm(quote = null) {
       <label>Valor total con impuestos<span class="money-input"><span data-currency-prefix>${currency} ${moneyPrefix(currency)}</span><input name="totalAmount" inputmode="decimal" data-money-input value="${quote ? formatMoneyInput(Number(quote.total_amount)) : ""}" placeholder="0.00" required></span></label>
       <label class="wide">Notas<input name="notes" value="${esc(quote && quote.notes)}" placeholder="Alcance, condición reportada o consideraciones"></label>
       <p class="customer-field-error wide" id="offer-form-error" role="alert"></p>
-      <div class="live-form-actions"><button class="live-secondary" type="button" data-hide-offer>Cancelar</button><button class="live-primary" type="submit">${quote ? "Guardar cambios" : "Crear oferta"}</button></div>
+      <div class="live-form-actions"><button class="live-secondary" type="button" data-hide-offer>${quote && quote.archived_at ? "Volver" : "Cancelar"}</button>${quote && quote.archived_at ? "" : `<button class="live-primary" type="submit">${quote ? "Guardar cambios" : "Crear oferta"}</button>`}</div>
     </form>
   </section>`;
 }
-function renderOffers() { return app.showOfferForm ? renderOfferForm() : renderFilters() + '<div id="quote-results">' + renderTable(filteredQuotes(), "Ofertas") + '</div>'; }
+function renderOffers() { return app.showOfferForm ? renderOfferForm() : renderFilters(true) + '<div id="quote-results">' + renderTable(filteredQuotes(), "Ofertas", false) + '</div>'; }
 function renderBoard() {
   return renderFilters() + '<section class="board-section"><div class="board-heading"><div><b>Pipeline comercial</b><small>Arrastra una oferta a otra columna para cambiar su etapa</small></div><span class="board-drag-icon" aria-hidden="true">⠿</span></div><div class="live-board" id="quote-board" style="--board-columns:' + Math.max(1, visibleStages().length) + '">' + renderBoardColumns(filteredQuotes()) + '</div></section>';
 }
 function renderBoardColumns(quotes) {
   const stages = visibleStages();
-  return stages.length ? stages.map(function (stage, index) { const rows = quotes.filter(function (quote) { return quote.stageId === stage.id; }); return '<section class="live-column" data-stage-id="' + stage.id + '"><header><span class="board-stage-marker" style="--stage-index:' + index + '"></span><span>' + esc(stage.name) + '</span><b>' + rows.length + '</b></header><div class="live-column-value">' + compact(rows.reduce(function (sum, quote) { return sum + Number(quote.total_amount || 0); }, 0)) + ' en ofertas</div><div class="board-drop-copy">Soltar en ' + esc(stage.name) + '</div><div class="board-cards">' + rows.map(function (quote) { return '<button class="live-deal" draggable="true" data-drag-quote="' + quote.id + '" data-quote-id="' + quote.id + '" type="button" aria-label="Abrir o arrastrar oferta Q-' + quote.quote_number + '"><div class="deal-top"><span>Q-' + quote.quote_number + '</span><span class="deal-grip" aria-hidden="true">⠿</span></div><h3>' + esc(quote.title) + '</h3><p>' + esc(quote.customerName) + '</p><div class="deal-kind">' + esc(label[quote.service_mode] || quote.service_mode) + '</div><footer><strong>' + compact(quote.total_amount, quote.currency_code) + '</strong><i title="' + esc(quote.responsibleName) + '">' + esc(initials(quote.responsibleName)) + '</i></footer></button>'; }).join("") + '</div></section>'; }).join("") : '<p class="empty-state">No hay etapas visibles. Activa una en Ajustes.</p>';
+  return stages.length ? stages.map(function (stage) { const rows = quotes.filter(function (quote) { return quote.stageId === stage.id; }); return '<section class="live-column" data-stage-id="' + stage.id + '"><header><span class="board-stage-marker" style="background:' + esc(stage.color_code) + '"></span><span>' + esc(stage.name) + '</span><b>' + rows.length + '</b></header><div class="live-column-value">' + renderAmounts(rows) + ' en ofertas</div><div class="board-drop-copy">Soltar en ' + esc(stage.name) + '</div><div class="board-cards">' + rows.map(function (quote) { return '<button class="live-deal" draggable="true" data-drag-quote="' + quote.id + '" data-quote-id="' + quote.id + '" type="button" aria-label="Abrir o arrastrar oferta Q-' + quote.quote_number + '"><div class="deal-top"><span>Q-' + quote.quote_number + '</span><span class="deal-grip" aria-hidden="true">⠿</span></div><h3>' + esc(quote.title) + '</h3><p>' + esc(quote.customerName) + '</p><div class="deal-kind">' + esc(label[quote.service_mode] || quote.service_mode) + '</div><footer><strong>' + compact(quote.total_amount, quote.currency_code) + '</strong><i title="' + esc(quote.responsibleName) + '">' + esc(initials(quote.responsibleName)) + '</i></footer></button>'; }).join("") + '</div></section>'; }).join("") : '<p class="empty-state">No hay etapas visibles. Activa una en Ajustes.</p>';
 }
 function refreshQuoteResults() {
   const results = root.querySelector("#quote-results");
-  if (results) results.innerHTML = renderTable(filteredQuotes(), "Ofertas");
+  if (results) results.innerHTML = renderTable(filteredQuotes(), "Ofertas", false);
   const board = root.querySelector("#quote-board");
   if (board) {
     board.style.setProperty("--board-columns", String(Math.max(1, visibleStages().length)));
@@ -385,7 +404,9 @@ function renderCustomerTable(customers) {
 function renderDetail() {
   const quote = app.quotes.find(function (item) { return item.id === app.quoteDetailId; });
   if (!quote) { app.quoteDetailId = null; return renderWorkspace(); }
-  return '<section class="live-heading"><div><p class="eyebrow">VENTAS / Q-' + quote.quote_number + '</p><h1>' + esc(quote.title) + '</h1><p>' + esc(quote.customerName) + ' · ' + esc(quote.stageName) + '</p></div><div class="live-heading-actions"><button class="live-secondary" type="button" data-close-detail>Volver a ofertas</button></div></section>' + renderOfferForm(quote);
+  const stageControl = quote.archived_at ? renderStatusPill(quote) : '<label class="detail-stage-picker" style="--stage-color:' + esc(quoteStateColor(quote)) + '"><span class="sr-only">Estatus de la oferta</span><select id="offer-stage" aria-label="Estatus de la oferta">' + app.stages.map(function (stage) { return '<option value="' + stage.id + '" ' + (stage.id === quote.stageId ? 'selected' : '') + '>' + esc(stage.name) + '</option>'; }).join('') + '</select></label>';
+  const actions = '<div class="detail-actions"><button class="detail-actions-trigger" type="button" id="offer-actions-trigger" aria-label="Más acciones de la oferta" aria-haspopup="menu" aria-expanded="false" aria-controls="offer-actions-menu"><span class="chevron-down" aria-hidden="true"></span></button><div class="detail-actions-menu" id="offer-actions-menu" role="menu" hidden>' + (quote.archived_at ? '<button type="button" role="menuitem" data-offer-action="restore">Restaurar oferta</button>' : '<button type="button" role="menuitem" data-offer-action="archive">Archivar oferta</button>') + (app.canManageStages ? '<button class="danger-action" type="button" role="menuitem" data-offer-action="delete">Eliminar oferta</button>' : '') + '</div></div>';
+  return '<section class="live-heading detail-heading"><div><p class="eyebrow">VENTAS / Q-' + quote.quote_number + '</p><div class="detail-title-row"><h1>' + esc(quote.title) + '</h1>' + stageControl + actions + '</div><p>' + esc(quote.customerName) + '</p></div><div class="live-heading-actions"><button class="live-secondary" type="button" data-close-detail>Volver a ofertas</button></div></section>' + renderOfferForm(quote);
 }
 
 function bindEvents() {
@@ -432,6 +453,47 @@ function bindEvents() {
   if (hideOffer) hideOffer.addEventListener("click", function () { app.showOfferForm = false; app.quoteDetailId = null; app.view = "offers"; renderApp(); });
   const offerForm = root.querySelector("#offer-form");
   if (offerForm) offerForm.addEventListener("submit", saveOffer);
+  if (offerForm && app.quoteDetailId && app.quotes.find(function (quote) { return quote.id === app.quoteDetailId && quote.archived_at; })) {
+    offerForm.querySelectorAll("input, select").forEach(function (input) { input.disabled = true; });
+  }
+  const offerStage = root.querySelector("#offer-stage");
+  if (offerStage) offerStage.addEventListener("change", async function () {
+    const quote = app.quotes.find(function (item) { return item.id === app.quoteDetailId; });
+    const stage = app.stages.find(function (item) { return item.id === Number(offerStage.value); });
+    if (!quote || !stage || quote.stageId === stage.id) return;
+    offerStage.disabled = true;
+    const result = await client.rpc("move_sales_offer_stage", { p_organization_id: app.organizationId, p_quote_id: quote.id, p_stage_id: stage.id });
+    offerStage.disabled = false;
+    if (result.error) { offerStage.value = String(quote.stageId); setError(result.error); return; }
+    quote.stageId = stage.id;
+    quote.stageKey = stage.stage_key;
+    quote.stageName = stage.name;
+    quote.stageColor = stage.color_code;
+    quote.status = quoteStatus(stage.stage_key);
+    quote.updated_at = new Date().toISOString();
+    const opportunity = app.opportunities.find(function (item) { return item.id === quote.opportunity_id; });
+    if (opportunity) opportunity.stage_id = stage.id;
+    offerStage.closest(".detail-stage-picker").style.setProperty("--stage-color", stage.color_code);
+    setNotice("Oferta movida a " + stage.name + ".");
+  });
+  const offerActionsTrigger = root.querySelector("#offer-actions-trigger");
+  const offerActionsMenu = root.querySelector("#offer-actions-menu");
+  if (offerActionsTrigger) offerActionsTrigger.addEventListener("click", function () {
+    offerActionsMenu.hidden = !offerActionsMenu.hidden;
+    offerActionsTrigger.setAttribute("aria-expanded", String(!offerActionsMenu.hidden));
+    if (!offerActionsMenu.hidden) offerActionsMenu.querySelector("button")?.focus();
+  });
+  if (offerActionsMenu) offerActionsMenu.addEventListener("click", function (event) {
+    const action = event.target.closest("[data-offer-action]");
+    if (!action) return;
+    offerActionsMenu.hidden = true;
+    offerActionsTrigger.setAttribute("aria-expanded", "false");
+    if (action.dataset.offerAction === "delete") openDeleteConfirm();
+    else manageOffer(action.dataset.offerAction);
+  });
+  if (offerActionsMenu) offerActionsMenu.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") { offerActionsMenu.hidden = true; offerActionsTrigger.setAttribute("aria-expanded", "false"); offerActionsTrigger.focus(); }
+  });
   root.querySelectorAll('.date-picker').forEach(function (input) { input.addEventListener('click', function () { if (typeof input.showPicker === 'function') { try { input.showPicker(); } catch (_) { /* Native control remains usable. */ } } }); });
   const currencySelect = root.querySelector("#offer-currency");
   if (currencySelect) currencySelect.addEventListener("change", function () {
@@ -489,8 +551,10 @@ function bindEvents() {
   if (customer) customer.addEventListener("change", function (event) { app.filters.customerId = event.target.value; refreshQuoteResults(); });
   const service = root.querySelector("#quote-service");
   if (service) service.addEventListener("change", function (event) { app.filters.serviceMode = event.target.value; refreshQuoteResults(); });
+  const status = root.querySelector("#quote-status");
+  if (status) status.addEventListener("change", function (event) { app.filters.status = event.target.value; refreshQuoteResults(); });
   const clear = root.querySelector("#clear-filters");
-  if (clear) clear.addEventListener("click", function () { app.filters = { search: "", customerId: "", serviceMode: "" }; search.value = ""; customer.value = ""; service.value = ""; refreshQuoteResults(); search.focus(); });
+  if (clear) clear.addEventListener("click", function () { app.filters = { search: "", customerId: "", serviceMode: "", status: "" }; search.value = ""; customer.value = ""; service.value = ""; if (status) status.value = ""; refreshQuoteResults(); search.focus(); });
   const customerListSearch = root.querySelector("#customer-search");
   if (customerListSearch) customerListSearch.addEventListener("input", function (event) { app.customerSearch = event.target.value; root.querySelector("#customer-results").innerHTML = renderCustomerTable(filteredCustomers()); });
   const closeDetail = root.querySelector("[data-close-detail]");
@@ -504,6 +568,7 @@ function bindEvents() {
   root.querySelectorAll("[data-stage-form]").forEach(function (form) { form.addEventListener("submit", saveStage); });
   const workspace = root.querySelector("#sales-workspace");
   workspace.addEventListener("click", function (event) {
+    if (offerActionsMenu && !offerActionsMenu.hidden && !event.target.closest(".detail-actions")) { offerActionsMenu.hidden = true; offerActionsTrigger.setAttribute("aria-expanded", "false"); }
     const quote = event.target.closest("[data-quote-id]");
     if (quote) { app.quoteDetailId = Number(quote.dataset.quoteId); renderApp(); return; }
     const edit = event.target.closest("[data-edit-customer]");
@@ -529,17 +594,50 @@ async function saveStage(event) {
   const name = form.elements.namedItem("name").value.trim();
   const visibility = form.elements.namedItem("isVisible");
   const isVisible = visibility.checked;
+  const colorCode = form.elements.namedItem("colorCode").value.toUpperCase();
   if (name.length < 2 || name.length > 80) { showToast("El nombre debe tener entre 2 y 80 caracteres.", "error"); return; }
+  if (!/^#[0-9A-F]{6}$/.test(colorCode)) { showToast("Selecciona un color válido.", "error"); return; }
   if (!isVisible && stage.is_visible && visibleStages().length === 1) { visibility.checked = true; showToast("Deja al menos una etapa visible en el tablero.", "error"); return; }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
-  const result = await client.from("pipeline_stages").update({ name: name, is_visible: isVisible }).eq("id", stage.id).eq("organization_id", app.organizationId).select("id, name, is_visible").single();
+  const result = await client.from("pipeline_stages").update({ name: name, is_visible: isVisible, color_code: colorCode }).eq("id", stage.id).eq("organization_id", app.organizationId).select("id, name, is_visible, color_code").single();
   button.disabled = false;
   if (result.error) { setError(result.error); return; }
   stage.name = result.data.name;
   stage.is_visible = result.data.is_visible;
-  app.quotes.filter(function (quote) { return quote.stageId === stage.id; }).forEach(function (quote) { quote.stageName = stage.name; });
+  stage.color_code = result.data.color_code;
+  app.quotes.filter(function (quote) { return quote.stageId === stage.id; }).forEach(function (quote) { quote.stageName = stage.name; quote.stageColor = stage.color_code; });
   setNotice("Etapa actualizada.");
+}
+
+function openDeleteConfirm() {
+  const quote = app.quotes.find(function (item) { return item.id === app.quoteDetailId; });
+  if (!quote || !app.canManageStages) return;
+  root.insertAdjacentHTML("beforeend", '<div class="confirm-backdrop" id="delete-offer-dialog"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-offer-title" aria-describedby="delete-offer-description"><h2 id="delete-offer-title">Eliminar oferta Q-' + quote.quote_number + '</h2><p id="delete-offer-description">Se eliminarán la oferta y sus líneas. Esta acción no se puede deshacer.</p><div><button class="live-secondary" type="button" id="cancel-delete-offer">Cancelar</button><button class="live-primary danger-button" type="button" id="confirm-delete-offer">Eliminar oferta</button></div></section></div>');
+  const dialog = root.querySelector("#delete-offer-dialog");
+  const close = function () { dialog.remove(); root.querySelector("#offer-actions-trigger")?.focus(); };
+  dialog.querySelector("#cancel-delete-offer").addEventListener("click", close);
+  dialog.addEventListener("click", function (event) { if (event.target === dialog) close(); });
+  dialog.addEventListener("keydown", function (event) { if (event.key === "Escape") close(); });
+  dialog.querySelector("#confirm-delete-offer").addEventListener("click", async function (event) {
+    event.currentTarget.disabled = true;
+    const saved = await manageOffer("delete");
+    if (!saved) event.currentTarget.disabled = false;
+    else dialog.remove();
+  });
+  dialog.querySelector("#cancel-delete-offer").focus();
+}
+
+async function manageOffer(action) {
+  const quote = app.quotes.find(function (item) { return item.id === app.quoteDetailId; });
+  if (!quote || !["archive", "restore", "delete"].includes(action)) return false;
+  const result = await client.rpc("manage_sales_offer", { p_organization_id: app.organizationId, p_quote_id: quote.id, p_action: action });
+  if (result.error) { setError(result.error); return false; }
+  app.quoteDetailId = null;
+  app.view = "offers";
+  setNotice("Oferta Q-" + quote.quote_number + ({ archive: " archivada.", restore: " restaurada.", delete: " eliminada." })[action]);
+  await loadSales();
+  return true;
 }
 
 async function saveOffer(event) {

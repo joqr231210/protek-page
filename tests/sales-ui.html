@@ -12,12 +12,12 @@
   <script>
     const customers = [{ id: 10, display_name: "Grupo Moller", legal_name: "Grupo Moller SA de CV", tax_id: "GMO123456AAA", account_code: "GM-01", status: "active" }, { id: 11, display_name: "Taller Norte", legal_name: "Taller Norte SA", tax_id: "TNO123456AAA", account_code: "TN-02", status: "active" }];
     const stages = [
-      { id: 1, stage_key: "new", name: "Nueva oportunidad", position: 10, outcome: null, is_closed: false, is_visible: true },
-      { id: 2, stage_key: "diagnosis", name: "Diagnóstico", position: 20, outcome: null, is_closed: false, is_visible: true },
-      { id: 3, stage_key: "quoted", name: "Oferta enviada", position: 30, outcome: null, is_closed: false, is_visible: true },
-      { id: 4, stage_key: "negotiation", name: "Negociación", position: 40, outcome: null, is_closed: false, is_visible: true },
-      { id: 5, stage_key: "won", name: "Ganada", position: 50, outcome: "won", is_closed: true, is_visible: true },
-      { id: 6, stage_key: "lost", name: "Perdida", position: 60, outcome: "lost", is_closed: true, is_visible: true }
+      { id: 1, stage_key: "new", name: "Nueva oportunidad", position: 10, outcome: null, is_closed: false, is_visible: true, color_code: "#EF5B50" },
+      { id: 2, stage_key: "diagnosis", name: "Diagnóstico", position: 20, outcome: null, is_closed: false, is_visible: true, color_code: "#D8943E" },
+      { id: 3, stage_key: "quoted", name: "Oferta enviada", position: 30, outcome: null, is_closed: false, is_visible: true, color_code: "#668CB8" },
+      { id: 4, stage_key: "negotiation", name: "Negociación", position: 40, outcome: null, is_closed: false, is_visible: true, color_code: "#9277AE" },
+      { id: 5, stage_key: "won", name: "Ganada", position: 50, outcome: "won", is_closed: true, is_visible: true, color_code: "#639A75" },
+      { id: 6, stage_key: "lost", name: "Perdida", position: 60, outcome: "lost", is_closed: true, is_visible: true, color_code: "#888890" }
     ];
     const opportunities = [];
     const quotes = [];
@@ -46,7 +46,7 @@
         if (this.table === "pipeline_stages" && this.updated) {
           const stage = stages.find((item) => item.id === this.rowId);
           Object.assign(stage, this.updated);
-          return Promise.resolve({ data: { id: stage.id, name: stage.name, is_visible: stage.is_visible }, error: null });
+          return Promise.resolve({ data: { id: stage.id, name: stage.name, is_visible: stage.is_visible, color_code: stage.color_code }, error: null });
         }
         return Promise.resolve({ data: { id: 10 }, error: null });
       }
@@ -66,11 +66,22 @@
       auth: { getUser: async () => ({ data: { user: { id: "qa", email: "qa@example.invalid" } } }), onAuthStateChange: () => {}, signOut: async () => {} },
       from: (table) => new Query(table),
       rpc: async (name, args) => {
+        if (name === "manage_sales_offer") {
+          const index = quotes.findIndex((item) => item.id === args.p_quote_id);
+          if (index < 0) return { error: new Error("Offer is not available") };
+          const quote = quotes[index];
+          const opportunity = opportunities.find((item) => item.id === quote.opportunity_id);
+          if (args.p_action === "archive") { quote.archived_at = new Date().toISOString(); if (opportunity) opportunity.archived_at = quote.archived_at; }
+          if (args.p_action === "restore") { quote.archived_at = null; if (opportunity) opportunity.archived_at = null; }
+          if (args.p_action === "delete") { quotes.splice(index, 1); const opportunityIndex = opportunities.indexOf(opportunity); if (opportunityIndex >= 0) opportunities.splice(opportunityIndex, 1); }
+          return { data: null, error: null };
+        }
         if (name === "move_sales_offer_stage") {
           const quote = quotes.find((item) => item.id === args.p_quote_id);
           const opportunity = quote && opportunities.find((item) => item.id === quote.opportunity_id);
           if (!opportunity) return { error: new Error("Offer is not available") };
           opportunity.stage_id = args.p_stage_id;
+          quote.status = ({ 1: "draft", 2: "pending_approval", 3: "sent", 4: "negotiation", 5: "approved", 6: "rejected" })[args.p_stage_id];
           return { data: null, error: null };
         }
         if (name === "update_sales_offer") {
@@ -84,7 +95,7 @@
         if (args.p_total_amount < args.p_subtotal) return { error: new Error("Offer totals are invalid") };
         const id = nextQuoteId++;
         opportunities.push({ id, customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, estimated_revenue: args.p_total_amount, stage_id: 1, owner_id: "qa", updated_at: new Date().toISOString() });
-        quotes.push({ id, quote_number: id, opportunity_id: id, customer_id: args.p_customer_id, title: args.p_title, notes: args.p_notes, service_mode: args.p_service_mode, currency_code: args.p_currency_code, subtotal: args.p_subtotal, total_amount: args.p_total_amount, status: "draft", updated_at: new Date().toISOString(), valid_until: args.p_valid_until });
+        quotes.push({ id, quote_number: id, opportunity_id: id, customer_id: args.p_customer_id, title: args.p_title, notes: args.p_notes, service_mode: args.p_service_mode, currency_code: args.p_currency_code, subtotal: args.p_subtotal, total_amount: args.p_total_amount, status: "draft", updated_at: new Date().toISOString(), valid_until: args.p_valid_until, archived_at: null });
         return { data: [{ quote_id: id, quote_number: id }], error: null };
       }
     }) };
