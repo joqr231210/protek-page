@@ -11,8 +11,6 @@
 .auth-form-links .subtle-button { padding:4px 0; cursor:pointer; }
 .auth-account { margin-top:32px !important; color:#a4a4ac !important; font-size:12px; }
 .auth-account + h1 { margin-top:24px; }
-#auth-toast { position:fixed; z-index:1000; right:20px; bottom:20px; max-width:min(420px, calc(100vw - 40px)); padding:14px 18px; border:1px solid #525259; border-radius:13px; background:#222225; color:#fff; box-shadow:0 16px 40px rgba(0,0,0,.24); font-size:13px; font-weight:650; }
-.live-success { border-color:#d5e7b5; background:#f5fadd; color:#4c670a; }
 .customer-picker { min-width:0; grid-column:1 / -1; }
 .customer-picker > label { display:block; margin-bottom:7px; color:var(--muted); font-size:12px; font-weight:750; }
 .customer-search-wrap { position:relative; }
@@ -43,3 +41,29 @@
 .money-input [data-currency-prefix] { flex:none; min-width:70px; padding:0 11px; border-right:1px solid var(--line); color:var(--muted); font-size:12px; font-weight:750; }
 .live-form .money-input input { flex:1; min-width:0; min-height:43px; padding:0 12px; border:0; border-radius:0; outline:0; }
 @media (max-width:760px) { .quick-customer-fields { grid-template-columns:1fr; } }
+.live-account { position:relative; padding:10px 0 0; }
+.live-account-trigger { display:flex; width:100%; min-width:0; align-items:center; gap:10px; padding:7px; border:0; border-radius:11px; background:transparent; color:#fff; text-align:left; cursor:pointer; }
+.live-account-trigger:hover,.live-account-trigger[aria-expanded="true"] { background:#29292d; }
+.live-account-trigger:focus-visible,.live-account-menu button:focus-visible,.toast-close:focus-visible { outline:2px solid #a6d959; outline-offset:2px; }
+.live-account-identity { min-width:0; flex:1; }
+.live-account-identity b,.live-account-identity small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.account-chevron { width:7px; height:7px; flex:none; margin:0 4px 4px 0; border-right:1.5px solid #aaaab0; border-bottom:1.5px solid #aaaab0; transform:rotate(45deg); }
+.live-account-trigger[aria-expanded="true"] .account-chevron { margin-top:5px; transform:rotate(225deg); }
+.live-account-menu { position:absolute; z-index:50; right:0; bottom:calc(100% + 8px); left:0; padding:5px; border:1px solid #424247; border-radius:12px; background:#29292d; box-shadow:0 16px 36px rgba(0,0,0,.3); }
+.live-account-menu[hidden] { display:none; }
+.live-account-menu button { width:100%; min-height:39px; padding:0 11px; border:0; border-radius:8px; background:transparent; color:#fff; text-align:left; font-size:13px; font-weight:700; cursor:pointer; }
+.live-account-menu button:hover { background:#3a3a3f; }
+#toast-region { position:fixed; z-index:1000; top:20px; right:20px; display:grid; width:min(390px, calc(100vw - 32px)); gap:9px; pointer-events:none; }
+.app-toast { display:flex; min-height:56px; align-items:center; gap:11px; padding:10px 11px; border:1px solid #3e3e43; border-radius:13px; background:#232326; color:#fff; box-shadow:0 15px 38px rgba(0,0,0,.22); font-size:13px; line-height:1.4; pointer-events:auto; }
+.toast-marker { display:grid; width:23px; height:23px; flex:none; place-items:center; border-radius:50%; background:#44444a; color:#fff; font-size:13px; font-weight:800; }
+.app-toast.success .toast-marker { background:#bddf73; color:#222a11; }
+.app-toast.error .toast-marker { background:#ff6a5e; color:#fff; }
+.toast-message { min-width:0; flex:1; }
+.toast-close { width:28px; height:28px; flex:none; border:0; border-radius:7px; background:transparent; color:#c7c7cc; font-size:23px; line-height:1; cursor:pointer; }
+.toast-close:hover { background:#3b3b40; color:#fff; }
+@media (max-width:760px) {
+  .live-sidebar { flex-direction:row; align-items:center; justify-content:space-between; }
+  .live-sidebar .live-account { display:block; width:min(54%, 235px); margin-top:0; padding:0; border:0; }
+  .live-account-menu { top:calc(100% + 8px); bottom:auto; }
+  #toast-region { top:12px; right:16px; }
+}

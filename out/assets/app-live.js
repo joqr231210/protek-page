@@ -35,8 +35,8 @@ function parseMoneyInput(value) {
 }
 function compact(value, code) { const prefix = code === "USD" ? "US$" : code === "EUR" ? "EUR " : "$"; return Number(value || 0) > 999999 ? prefix + (Number(value) / 1000000).toFixed(2) + "M" : Number(value || 0) > 999 ? prefix + Math.round(Number(value) / 1000) + "K" : money(value, code); }
 function initials(value) { return String(value || "P").split(/\s+/).slice(0, 2).map(function (part) { return part[0]; }).join("").toUpperCase(); }
-function setNotice(message) { app.notice = message; app.error = ""; }
-function setError(error) { app.error = error && error.message ? error.message : "No fue posible completar la operación."; app.notice = ""; }
+function setNotice(message) { app.notice = message; app.error = ""; if (app.user) showToast(message, "success"); }
+function setError(error) { app.error = error && error.message ? error.message : "No fue posible completar la operación."; app.notice = ""; if (app.user) showToast(app.error, "error"); }
 function currentOrganization() { return app.organizations.find(function (item) { return item.id === app.organizationId; }); }
 function quoteStatus(stage) { return ({ new: "draft", diagnosis: "pending_approval", quoted: "sent", negotiation: "negotiation", won: "approved", lost: "rejected" })[stage] || "draft"; }
 function openQuotes() { return app.quotes.filter(function (quote) { return !["approved", "rejected"].includes(quote.status); }); }
@@ -47,7 +47,6 @@ function filteredQuotes() {
     return (!text || searchable.includes(text)) && (!app.filters.customerId || quote.customer_id === Number(app.filters.customerId)) && (!app.filters.serviceMode || quote.service_mode === app.filters.serviceMode);
   });
 }
-function notice() { return app.error ? '<p class="live-notice">' + esc(app.error) + '</p>' : app.notice ? '<p class="live-notice live-success">' + esc(app.notice) + '</p>' : ""; }
 function authError(error) {
   const message = String(error && error.message || "").toLowerCase();
   if (message.includes("expired") || message.includes("invalid") || message.includes("token")) return "El código venció o no es válido. Solicita uno nuevo y usa el código más reciente.";
@@ -55,15 +54,33 @@ function authError(error) {
   if (message.includes("not found") || message.includes("signup") || message.includes("not allowed")) return "No encontramos una cuenta con este correo. Selecciona Crear cuenta.";
   return error && error.message || "No fue posible completar el acceso.";
 }
-function showToast(message) {
-  const old = document.querySelector("#auth-toast");
-  if (old) old.remove();
+function showToast(message, type) {
+  let region = document.querySelector("#toast-region");
+  if (!region) {
+    region = document.createElement("div");
+    region.id = "toast-region";
+    document.body.appendChild(region);
+  }
   const toast = document.createElement("div");
-  toast.id = "auth-toast";
-  toast.setAttribute("role", "status");
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  setTimeout(function () { if (toast.isConnected) toast.remove(); }, 6500);
+  toast.className = "app-toast " + (type || "info");
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  const marker = document.createElement("span");
+  marker.className = "toast-marker";
+  marker.setAttribute("aria-hidden", "true");
+  marker.textContent = type === "error" ? "!" : type === "success" ? "✓" : "i";
+  const copy = document.createElement("span");
+  copy.className = "toast-message";
+  copy.textContent = message;
+  const close = document.createElement("button");
+  close.className = "toast-close";
+  close.type = "button";
+  close.setAttribute("aria-label", "Cerrar notificación");
+  close.textContent = "×";
+  close.addEventListener("click", function () { toast.remove(); });
+  toast.append(marker, copy, close);
+  region.appendChild(toast);
+  while (region.children.length > 3) region.firstElementChild.remove();
+  setTimeout(function () { toast.remove(); }, 6000);
 }
 function savePendingAuth() {
   sessionStorage.setItem("protek.pendingAuth", JSON.stringify({ email: app.authEmail, mode: app.authMode, requestedAt: app.authRequestedAt }));
@@ -122,7 +139,6 @@ async function verifyOtp(event) {
   app.authMode = "login";
   setNotice(existingAccount ? "Este correo ya tenía una cuenta. Iniciaste sesión." : "Acceso confirmado.");
   await loadWorkspace();
-  if (existingAccount) showToast("Este correo ya tenía una cuenta. Iniciaste sesión.");
 }
 
 function renderOnboarding() {
@@ -192,15 +208,15 @@ function renderApp() {
   const org = currentOrganization();
   if (!org) { renderOnboarding(); return; }
   const viewName = app.quoteDetailId ? "Oferta" : ({ summary: "Resumen", offers: "Ofertas", board: "Tablero", customers: "Clientes" })[app.view];
-  root.innerHTML = '<div class="app-shell"><aside class="live-sidebar"><a class="brand" href="./"><i></i>protek</a><div class="workspace-switch"><select class="company-select" id="company-select" aria-label="Cambiar empresa">' + app.organizations.map(function (item) { return '<option value="' + item.id + '" ' + (item.id === app.organizationId ? "selected" : "") + '>' + esc(item.name) + '</option>'; }).join("") + '</select></div><nav class="live-nav" aria-label="Módulos"><button class="active" type="button" data-sales-home>Ventas</button>' + ["Órdenes", "Planeación", "Recursos", "Almacén", "Compras", "Calidad", "Ingeniería", "Agente IA"].map(function (module) { return '<button type="button" data-unavailable="' + esc(module) + '">' + esc(module) + '</button>'; }).join("") + '</nav><div class="live-account"><span class="profile-initials">' + esc(initials(app.profile && app.profile.display_name)) + '</span><div><b>' + esc(app.profile && app.profile.display_name || "Usuario") + '</b><small>' + esc(app.user.email) + '</small></div></div></aside><main class="live-main"><header class="live-topbar"><div class="live-breadcrumb">Protek / <b>Ventas / ' + viewName + '</b></div><button class="live-secondary" type="button" id="sign-out">Salir</button></header><div id="sales-workspace">' + renderWorkspace() + '</div></main></div>';
+  root.innerHTML = '<div class="app-shell"><aside class="live-sidebar"><a class="brand" href="./"><i></i>protek</a><div class="workspace-switch"><select class="company-select" id="company-select" aria-label="Cambiar empresa">' + app.organizations.map(function (item) { return '<option value="' + item.id + '" ' + (item.id === app.organizationId ? "selected" : "") + '>' + esc(item.name) + '</option>'; }).join("") + '</select></div><nav class="live-nav" aria-label="Módulos"><button class="active" type="button" data-sales-home>Ventas</button>' + ["Órdenes", "Planeación", "Recursos", "Almacén", "Compras", "Calidad", "Ingeniería", "Agente IA"].map(function (module) { return '<button type="button" data-unavailable="' + esc(module) + '">' + esc(module) + '</button>'; }).join("") + '</nav><div class="live-account"><button class="live-account-trigger" id="account-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu"><span class="profile-initials">' + esc(initials(app.profile && app.profile.display_name)) + '</span><span class="live-account-identity"><b>' + esc(app.profile && app.profile.display_name || "Usuario") + '</b><small>' + esc(app.user.email) + '</small></span><span class="account-chevron" aria-hidden="true"></span></button><div class="live-account-menu" id="account-menu" role="menu" hidden><button type="button" id="sign-out" role="menuitem">Salir</button></div></div></aside><main class="live-main"><header class="live-topbar"><div class="live-breadcrumb">Ventas / <b>' + viewName + '</b></div></header><div id="sales-workspace">' + renderWorkspace() + '</div></main></div>';
   bindEvents();
 }
 
 function renderWorkspace() {
   if (app.quoteDetailId) return renderDetail();
   const heading = { summary: ["Resumen comercial", "Resultados, conversión y seguimiento para decidir el siguiente movimiento."], offers: ["Ofertas", "Convierte oportunidades de servicio y refacciones en trabajo rentable."], board: ["Tablero comercial", "Mueve ofertas entre etapas sin separar el dato comercial de la operación."], customers: ["Clientes", "Empresas y contactos que concentran historial comercial y operativo."] }[app.view];
-  const action = app.view === "offers" && !app.showOfferForm ? '<button class="live-primary" type="button" data-show-offer>+ Nueva oferta</button>' : app.view === "customers" ? '<button class="live-primary" type="button" data-new-customer>+ Nuevo cliente</button>' : "";
-  return notice() + '<section class="live-heading"><div><p class="eyebrow">MÓDULO / VENTAS</p><h1>' + heading[0] + '</h1><p>' + heading[1] + '</p></div><div class="live-heading-actions">' + action + '</div></section><nav class="live-tabs" aria-label="Secciones de Ventas">' + [["summary", "Resumen"], ["offers", "Ofertas"], ["board", "Tablero"], ["customers", "Clientes"]].map(function (item) { return '<button type="button" data-view="' + item[0] + '" class="' + (app.view === item[0] ? "active" : "") + '">' + item[1] + '</button>'; }).join("") + '</nav>' + (app.view === "summary" ? renderSummary() : app.view === "offers" ? renderOffers() : app.view === "board" ? renderBoard() : renderCustomers());
+  const action = (app.view === "summary" || app.view === "offers" && !app.showOfferForm) ? '<button class="live-primary" type="button" data-show-offer>+ Nueva oferta</button>' : app.view === "customers" ? '<button class="live-primary" type="button" data-new-customer>+ Nuevo cliente</button>' : "";
+  return '<section class="live-heading"><div><h1>' + heading[0] + '</h1><p>' + heading[1] + '</p></div><div class="live-heading-actions">' + action + '</div></section><nav class="live-tabs" aria-label="Secciones de Ventas">' + [["summary", "Resumen"], ["offers", "Ofertas"], ["board", "Tablero"], ["customers", "Clientes"]].map(function (item) { return '<button type="button" data-view="' + item[0] + '" class="' + (app.view === item[0] ? "active" : "") + '">' + item[1] + '</button>'; }).join("") + '</nav>' + (app.view === "summary" ? renderSummary() : app.view === "offers" ? renderOffers() : app.view === "board" ? renderBoard() : renderCustomers());
 }
 
 function renderSummary() {
@@ -320,20 +336,38 @@ function renderCustomers() {
 function renderDetail() {
   const quote = app.quotes.find(function (item) { return item.id === app.quoteDetailId; });
   if (!quote) { app.quoteDetailId = null; return renderWorkspace(); }
-  return notice() + '<section class="live-heading"><div><p class="eyebrow">VENTAS / Q-' + quote.quote_number + '</p><h1>' + esc(quote.title) + '</h1><p>' + esc(quote.customerName) + ' · ' + label[quote.service_mode] + '</p></div><div class="live-heading-actions"><button class="live-secondary" type="button" data-close-detail>Volver a ofertas</button></div></section><section class="live-grid"><article class="live-panel"><span class="live-label">INFORMACIÓN GENERAL</span><h2>' + money(quote.total_amount, quote.currency_code) + '</h2><div class="live-bars"><div class="live-bar"><span>Cliente</span><b>' + esc(quote.customerName) + '</b><em></em></div><div class="live-bar"><span>Vigencia</span><b>' + esc(quote.valid_until || "Sin vigencia") + '</b><em></em></div><div class="live-bar"><span>Etapa</span><b>' + esc(quote.stageName) + '</b><em></em></div></div></article><article class="live-panel"><span class="live-label">NOTAS</span><h2>' + esc(quote.notes || "Sin notas registradas.") + '</h2><p style="color:var(--muted);line-height:1.55">Esta oferta está vinculada a su oportunidad, etapa comercial e historial de actividad.</p></article></section>';
+  return '<section class="live-heading"><div><p class="eyebrow">VENTAS / Q-' + quote.quote_number + '</p><h1>' + esc(quote.title) + '</h1><p>' + esc(quote.customerName) + ' · ' + label[quote.service_mode] + '</p></div><div class="live-heading-actions"><button class="live-secondary" type="button" data-close-detail>Volver a ofertas</button></div></section><section class="live-grid"><article class="live-panel"><span class="live-label">INFORMACIÓN GENERAL</span><h2>' + money(quote.total_amount, quote.currency_code) + '</h2><div class="live-bars"><div class="live-bar"><span>Cliente</span><b>' + esc(quote.customerName) + '</b><em></em></div><div class="live-bar"><span>Vigencia</span><b>' + esc(quote.valid_until || "Sin vigencia") + '</b><em></em></div><div class="live-bar"><span>Etapa</span><b>' + esc(quote.stageName) + '</b><em></em></div></div></article><article class="live-panel"><span class="live-label">NOTAS</span><h2>' + esc(quote.notes || "Sin notas registradas.") + '</h2><p style="color:var(--muted);line-height:1.55">Esta oferta está vinculada a su oportunidad, etapa comercial e historial de actividad.</p></article></section>';
 }
 
 function bindEvents() {
+  const accountTrigger = root.querySelector("#account-trigger");
+  const accountMenu = root.querySelector("#account-menu");
+  accountTrigger.addEventListener("click", function () {
+    const open = accountMenu.hidden;
+    accountMenu.hidden = !open;
+    accountTrigger.setAttribute("aria-expanded", String(open));
+    if (open) accountMenu.querySelector("button").focus();
+  });
+  accountMenu.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      accountMenu.hidden = true;
+      accountTrigger.setAttribute("aria-expanded", "false");
+      accountTrigger.focus();
+    }
+  });
   const signOut = root.querySelector("#sign-out");
-  if (signOut) signOut.addEventListener("click", async function () { await client.auth.signOut(); });
+  signOut.addEventListener("click", async function () {
+    const result = await client.auth.signOut();
+    if (result.error) setError(result.error);
+  });
   const companies = root.querySelector("#company-select");
   if (companies) companies.addEventListener("change", async function (event) { app.organizationId = Number(event.target.value); localStorage.setItem("protek.activeOrganization", String(app.organizationId)); app.quoteDetailId = null; app.customerEditorId = null; setNotice("Empresa activa actualizada."); await loadSales(); });
   root.querySelectorAll("[data-view]").forEach(function (button) { button.addEventListener("click", function () { app.view = button.dataset.view; app.quoteDetailId = null; app.customerEditorId = null; app.showOfferForm = false; app.error = ""; app.notice = ""; renderApp(); }); });
   const salesHome = root.querySelector("[data-sales-home]");
   if (salesHome) salesHome.addEventListener("click", function () { app.view = "summary"; app.quoteDetailId = null; renderApp(); });
-  root.querySelectorAll("[data-unavailable]").forEach(function (button) { button.addEventListener("click", function () { setNotice(button.dataset.unavailable + " continúa en preparación. Ventas es el primer módulo conectado."); renderApp(); }); });
+  root.querySelectorAll("[data-unavailable]").forEach(function (button) { button.addEventListener("click", function () { showToast(button.dataset.unavailable + " continúa en preparación. Ventas es el primer módulo conectado.", "info"); }); });
   const showOffer = root.querySelector("[data-show-offer]");
-  if (showOffer) showOffer.addEventListener("click", function () { app.showOfferForm = true; renderApp(); });
+  if (showOffer) showOffer.addEventListener("click", function () { app.view = "offers"; app.showOfferForm = true; renderApp(); root.querySelector('[name="title"]')?.focus(); });
   const hideOffer = root.querySelector("[data-hide-offer]");
   if (hideOffer) hideOffer.addEventListener("click", function () { app.showOfferForm = false; renderApp(); });
   const offerForm = root.querySelector("#offer-form");
@@ -483,5 +517,14 @@ async function boot() {
   await loadWorkspace();
 }
 document.addEventListener("pointerdown", function (event) { const picker = root.querySelector("#offer-customer-picker"); if (picker && !picker.contains(event.target)) closeCustomerResults(); });
+document.addEventListener("pointerdown", function (event) {
+  const account = root.querySelector(".live-account");
+  if (account && !account.contains(event.target)) {
+    const menu = account.querySelector("#account-menu");
+    const trigger = account.querySelector("#account-trigger");
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  }
+});
 client.auth.onAuthStateChange(function (event) { if (event === "SIGNED_OUT") { app.user = null; app.authStep = "email"; app.authMode = "login"; app.authEmail = ""; app.notice = ""; app.error = ""; clearPendingAuth(); renderAuth(); } });
 boot();
