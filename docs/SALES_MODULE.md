@@ -27,6 +27,12 @@ The connected Sales application is published at the Sites `/app` route. It uses 
 - In the Sites app, the Offers and Tablero filters update only their results so typing keeps focus. Clientes has a search by commercial name, legal name, RFC, or account code.
 - Sites Ajustes > Ventas lets Sales administrators rename or hide the five board stages for their company. The terminal `lost` stage stays internal; hiding a stage never deletes its offers. The board and Summary pipeline use the same visible-stage list, while Offers remains a complete list.
 
+### Current Sites offer workflow
+
+The same inline form creates and edits an offer. New offers default to a validity date 30 calendar days after the user's local date; the date input opens the native calendar from the entire control. Opening an existing offer preloads its customer, title, service mode, currency, validity, amounts, and notes. Saving edits calls `update_sales_offer` in one database transaction, updating the quote, its single quote line, and linked opportunity while preserving its stage and status. Offers with multiple lines are rejected by this editor until a line-item editor exists.
+
+The Kanban board uses draggable offer cards, full-column drop targets, and a highlighted target during drag. Its stage move still uses `move_sales_offer_stage`. Settings follow `Ajustes > Ventas > Ofertas > Estatus de ofertas`; the last level owns the existing five-stage rename/visibility controls. Breadcrumb steps are clickable.
+
 Attachment persistence is intentionally kept separate from the form interaction. The current detail experience manages attachments in the offer workspace; production persistence should use a company-scoped Supabase Storage bucket and a `quote_documents` record tied to the canonical quote once remote schema administration is available.
 
 The starter technical template is currently a UI schema. Its multi-company definition, assignment, typed-value, and versioned-snapshot tables should be introduced together in the custom-field migration, rather than persisting an unvalidated JSON blob on `quotes`.
@@ -46,7 +52,7 @@ Without a signed-in organization member, the Sites app only presents the OTP acc
 
 ## Applying the schema
 
-The remote project has the foundation, workflow, and Sales RPC migrations applied: [20260918014800_create_sales_foundation.sql](../supabase/migrations/20260918014800_create_sales_foundation.sql), [20260918142146_add_offer_workflow_fields.sql](../supabase/migrations/20260918142146_add_offer_workflow_fields.sql), [20260922180903_add_sales_offer_rpc.sql](../supabase/migrations/20260922180903_add_sales_offer_rpc.sql), and [20260922181012_add_sales_offer_stage_rpc.sql](../supabase/migrations/20260922181012_add_sales_offer_stage_rpc.sql).
+The remote project has the foundation, workflow, and Sales RPC migrations applied: [20260918014800_create_sales_foundation.sql](../supabase/migrations/20260918014800_create_sales_foundation.sql), [20260918142146_add_offer_workflow_fields.sql](../supabase/migrations/20260918142146_add_offer_workflow_fields.sql), [20260922180903_add_sales_offer_rpc.sql](../supabase/migrations/20260922180903_add_sales_offer_rpc.sql), [20260922181012_add_sales_offer_stage_rpc.sql](../supabase/migrations/20260922181012_add_sales_offer_stage_rpc.sql), and [20260923140000_update_sales_offer_rpc.sql](../supabase/migrations/20260923140000_update_sales_offer_rpc.sql).
 
 For a new environment, link the target project and apply the same migration sequence:
 

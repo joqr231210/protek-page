@@ -66,11 +66,25 @@
       auth: { getUser: async () => ({ data: { user: { id: "qa", email: "qa@example.invalid" } } }), onAuthStateChange: () => {}, signOut: async () => {} },
       from: (table) => new Query(table),
       rpc: async (name, args) => {
+        if (name === "move_sales_offer_stage") {
+          const quote = quotes.find((item) => item.id === args.p_quote_id);
+          const opportunity = quote && opportunities.find((item) => item.id === quote.opportunity_id);
+          if (!opportunity) return { error: new Error("Offer is not available") };
+          opportunity.stage_id = args.p_stage_id;
+          return { data: null, error: null };
+        }
+        if (name === "update_sales_offer") {
+          const quote = quotes.find((item) => item.id === args.p_quote_id);
+          if (!quote) return { error: new Error("Offer is not available") };
+          Object.assign(quote, { customer_id: args.p_customer_id, title: args.p_title, notes: args.p_notes, service_mode: args.p_service_mode, currency_code: args.p_currency_code, subtotal: args.p_subtotal, total_amount: args.p_total_amount, valid_until: args.p_valid_until, updated_at: new Date().toISOString() });
+          Object.assign(opportunities.find((item) => item.id === quote.opportunity_id), { customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, estimated_revenue: args.p_total_amount });
+          return { data: [{ quote_id: quote.id, quote_number: quote.quote_number }], error: null };
+        }
         if (name !== "create_sales_offer") return { error: new Error("RPC no simulada") };
         if (args.p_total_amount < args.p_subtotal) return { error: new Error("Offer totals are invalid") };
         const id = nextQuoteId++;
         opportunities.push({ id, customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, estimated_revenue: args.p_total_amount, stage_id: 1, owner_id: "qa", updated_at: new Date().toISOString() });
-        quotes.push({ id, quote_number: id, opportunity_id: id, customer_id: args.p_customer_id, title: args.p_title, service_mode: args.p_service_mode, currency_code: args.p_currency_code, subtotal: args.p_subtotal, total_amount: args.p_total_amount, status: "draft", updated_at: new Date().toISOString(), valid_until: null });
+        quotes.push({ id, quote_number: id, opportunity_id: id, customer_id: args.p_customer_id, title: args.p_title, notes: args.p_notes, service_mode: args.p_service_mode, currency_code: args.p_currency_code, subtotal: args.p_subtotal, total_amount: args.p_total_amount, status: "draft", updated_at: new Date().toISOString(), valid_until: args.p_valid_until });
         return { data: [{ quote_id: id, quote_number: id }], error: null };
       }
     }) };
