@@ -67,3 +67,34 @@
   .live-account-menu { top:calc(100% + 8px); bottom:auto; }
   #toast-region { top:12px; right:16px; }
 }
+.live-board { grid-auto-flow:row; grid-template-columns:repeat(var(--board-columns, 5), minmax(220px, 1fr)); }
+.mobile-nav-toggle { display:none; }
+.customer-list-search { max-width:430px; margin:0 0 16px; }
+.customer-list-search .offer-filter { min-height:43px; }
+.settings-surface { margin-top:0; }
+.settings-note { margin:0; padding:18px 20px; color:var(--muted); font-size:13px; line-height:1.5; }
+.settings-surface > .settings-note:last-child { border-top:1px solid var(--line); }
+.stage-settings-list { border-top:1px solid var(--line); }
+.stage-settings-row { display:grid; grid-template-columns:34px minmax(200px, 1fr) 110px 92px; gap:16px; align-items:end; min-height:88px; padding:14px 20px; border-bottom:1px solid var(--line); }
+.stage-settings-row:last-child { border-bottom:0; }
+.stage-position { align-self:center; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+.stage-settings-row label { display:grid; gap:7px; color:var(--muted); font-size:12px; font-weight:700; }
+.stage-settings-row input[type="text"],.stage-settings-row input[name="name"] { width:100%; min-height:40px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); font-size:13px; font-weight:600; }
+.stage-settings-row input:disabled { color:#77777d; background:#f7f7f7; }
+.stage-settings-row input:focus-visible { outline:2px solid var(--red); outline-offset:1px; }
+.stage-settings-row .stage-visibility { display:flex; min-height:40px; align-items:center; gap:8px; color:var(--ink); font-size:13px; }
+.stage-visibility input { width:16px; height:16px; accent-color:var(--red); }
+.stage-settings-row .live-secondary { min-height:40px; }
+@media (max-width:760px) {
+  .live-sidebar { flex-wrap:wrap; }
+  .live-sidebar .brand { flex:1; min-width:0; }
+  .mobile-nav-toggle { display:grid; width:38px; height:38px; flex:none; place-items:center; padding:0; border:1px solid #39393e; border-radius:9px; background:#29292d; color:#fff; font-size:20px; cursor:pointer; }
+  .mobile-nav-toggle:focus-visible { outline:2px solid #a6d959; outline-offset:2px; }
+  .live-sidebar .live-account { width:min(44%, 150px); }
+  .live-account-identity small { display:none; }
+  .live-sidebar.mobile-nav-open .workspace-switch { display:block; width:100%; order:4; margin-top:10px; }
+  .live-sidebar.mobile-nav-open .live-nav { display:grid; width:100%; order:5; margin-top:10px; padding-bottom:10px; }
+  .stage-settings-row { grid-template-columns:24px minmax(0, 1fr); gap:10px; }
+  .stage-settings-row .stage-visibility { grid-column:2; }
+  .stage-settings-row .live-secondary { grid-column:2; justify-self:start; }
+}

@@ -1,6 +1,6 @@
 const root = document.querySelector("#app-root");
 const client = window.supabase.createClient("https://zdwkjdbjwwxenwmdrzgq.supabase.co", "sb_publishable_JF2LRShpTvvTLv_0oZNTJA_lCqJFOub");
-const app = { user: null, profile: null, organizations: [], organizationId: Number(localStorage.getItem("protek.activeOrganization") || 0), stages: [], customers: [], members: [], opportunities: [], quotes: [], view: "summary", authEmail: "", authMode: "login", authStep: "email", authRequestedAt: 0, notice: "", error: "", showOfferForm: false, quoteDetailId: null, customerEditorId: null, filters: { search: "", customerId: "", serviceMode: "" } };
+const app = { user: null, profile: null, organizations: [], organizationId: Number(localStorage.getItem("protek.activeOrganization") || 0), stages: [], customers: [], members: [], opportunities: [], quotes: [], view: "summary", authEmail: "", authMode: "login", authStep: "email", authRequestedAt: 0, notice: "", error: "", showOfferForm: false, quoteDetailId: null, customerEditorId: null, customerSearch: "", canManageStages: false, filters: { search: "", customerId: "", serviceMode: "" } };
 const label = { workshop: "Servicio en taller", field: "Servicio en campo", parts: "Refaccionamiento", draft: "Borrador", pending_approval: "Por autorizar", sent: "Oferta enviada", negotiation: "Negociación", approved: "Autorizada", rejected: "Rechazada" };
 
 function esc(value) { return String(value || "").replace(/[&<>"']/g, function (char) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]; }); }
@@ -38,6 +38,7 @@ function initials(value) { return String(value || "P").split(/\s+/).slice(0, 2).
 function setNotice(message) { app.notice = message; app.error = ""; if (app.user) showToast(message, "success"); }
 function setError(error) { app.error = error && error.message ? error.message : "No fue posible completar la operación."; app.notice = ""; if (app.user) showToast(app.error, "error"); }
 function currentOrganization() { return app.organizations.find(function (item) { return item.id === app.organizationId; }); }
+function visibleStages() { return app.stages.filter(function (stage) { return stage.outcome !== "lost" && stage.is_visible; }).slice(0, 5); }
 function quoteStatus(stage) { return ({ new: "draft", diagnosis: "pending_approval", quoted: "sent", negotiation: "negotiation", won: "approved", lost: "rejected" })[stage] || "draft"; }
 function openQuotes() { return app.quotes.filter(function (quote) { return !["approved", "rejected"].includes(quote.status); }); }
 function filteredQuotes() {
@@ -162,14 +163,14 @@ async function loadWorkspace() {
   root.innerHTML = '<div class="app-loading">Sincronizando tu operación...</div>';
   const results = await Promise.all([
     client.from("profiles").select("display_name").eq("id", app.user.id).maybeSingle(),
-    client.from("organization_members").select("organization_id, role, organizations(id, name, slug)").eq("user_id", app.user.id).eq("status", "active").order("organization_id")
+    client.from("organization_members").select("id, organization_id, role, organizations(id, name, slug)").eq("user_id", app.user.id).eq("status", "active").order("organization_id")
   ]);
   const profile = results[0], memberships = results[1];
   if (memberships.error) { setError(memberships.error); renderAuth(); return; }
   app.profile = profile.data || { display_name: app.user.email.split("@")[0] };
   app.organizations = (memberships.data || []).map(function (membership) {
     const organization = Array.isArray(membership.organizations) ? membership.organizations[0] : membership.organizations;
-    return { id: Number(membership.organization_id), name: organization && organization.name || "Empresa sin nombre", slug: organization && organization.slug || "" };
+    return { id: Number(membership.organization_id), memberId: membership.id, role: membership.role, name: organization && organization.name || "Empresa sin nombre", slug: organization && organization.slug || "" };
   });
   if (!app.organizations.length) { renderOnboarding(); return; }
   if (!app.organizations.some(function (organization) { return organization.id === app.organizationId; })) app.organizationId = app.organizations[0].id;
@@ -180,15 +181,17 @@ async function loadWorkspace() {
 async function loadSales() {
   const org = app.organizationId;
   const results = await Promise.all([
-    client.from("pipeline_stages").select("id, stage_key, name, position, is_closed, outcome").eq("organization_id", org).order("position"),
+    client.from("pipeline_stages").select("id, stage_key, name, position, is_closed, outcome, is_visible").eq("organization_id", org).order("position"),
     client.from("customers").select("id, display_name, legal_name, tax_id, account_code, status").eq("organization_id", org).is("archived_at", null).order("display_name"),
     client.from("organization_members").select("user_id").eq("organization_id", org).eq("status", "active"),
     client.from("sales_opportunities").select("id, customer_id, title, service_mode, estimated_revenue, stage_id, owner_id, updated_at").eq("organization_id", org).is("archived_at", null).order("updated_at", { ascending: false }),
-    client.from("quotes").select("id, quote_number, customer_id, opportunity_id, title, notes, service_mode, currency_code, subtotal, total_amount, status, updated_at, valid_until").eq("organization_id", org).is("archived_at", null).order("updated_at", { ascending: false })
+    client.from("quotes").select("id, quote_number, customer_id, opportunity_id, title, notes, service_mode, currency_code, subtotal, total_amount, status, updated_at, valid_until").eq("organization_id", org).is("archived_at", null).order("updated_at", { ascending: false }),
+    client.from("organization_member_module_permissions").select("access_level").eq("organization_id", org).eq("organization_member_id", currentOrganization().memberId).eq("module_key", "sales").maybeSingle()
   ]);
   const failed = results.find(function (result) { return result.error; });
   if (failed) { setError(failed.error); renderApp(); return; }
   app.stages = results[0].data || [];
+  app.canManageStages = ["owner", "admin"].includes(currentOrganization().role) || results[5].data?.access_level === "admin";
   app.customers = results[1].data || [];
   app.members = (results[2].data || []).map(function (member) { return { id: member.user_id, name: member.user_id === app.user.id ? app.profile.display_name : "Usuario" }; });
   app.opportunities = results[3].data || [];
@@ -207,12 +210,15 @@ async function loadSales() {
 function renderApp() {
   const org = currentOrganization();
   if (!org) { renderOnboarding(); return; }
-  const viewName = app.quoteDetailId ? "Oferta" : ({ summary: "Resumen", offers: "Ofertas", board: "Tablero", customers: "Clientes" })[app.view];
-  root.innerHTML = '<div class="app-shell"><aside class="live-sidebar"><a class="brand" href="./"><i></i>protek</a><div class="workspace-switch"><select class="company-select" id="company-select" aria-label="Cambiar empresa">' + app.organizations.map(function (item) { return '<option value="' + item.id + '" ' + (item.id === app.organizationId ? "selected" : "") + '>' + esc(item.name) + '</option>'; }).join("") + '</select></div><nav class="live-nav" aria-label="Módulos"><button class="active" type="button" data-sales-home>Ventas</button>' + ["Órdenes", "Planeación", "Recursos", "Almacén", "Compras", "Calidad", "Ingeniería", "Agente IA"].map(function (module) { return '<button type="button" data-unavailable="' + esc(module) + '">' + esc(module) + '</button>'; }).join("") + '</nav><div class="live-account"><button class="live-account-trigger" id="account-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu"><span class="profile-initials">' + esc(initials(app.profile && app.profile.display_name)) + '</span><span class="live-account-identity"><b>' + esc(app.profile && app.profile.display_name || "Usuario") + '</b><small>' + esc(app.user.email) + '</small></span><span class="account-chevron" aria-hidden="true"></span></button><div class="live-account-menu" id="account-menu" role="menu" hidden><button type="button" id="sign-out" role="menuitem">Salir</button></div></div></aside><main class="live-main"><header class="live-topbar"><div class="live-breadcrumb">Ventas / <b>' + viewName + '</b></div></header><div id="sales-workspace">' + renderWorkspace() + '</div></main></div>';
+  const viewName = app.quoteDetailId ? "Oferta" : ({ summary: "Resumen", offers: "Ofertas", board: "Tablero", customers: "Clientes", settings: "Ajustes" })[app.view];
+  root.innerHTML = '<div class="app-shell"><aside class="live-sidebar"><a class="brand" href="./"><i></i>protek</a><div class="workspace-switch"><select class="company-select" id="company-select" aria-label="Cambiar empresa">' + app.organizations.map(function (item) { return '<option value="' + item.id + '" ' + (item.id === app.organizationId ? "selected" : "") + '>' + esc(item.name) + '</option>'; }).join("") + '</select></div><nav class="live-nav" aria-label="Módulos"><button class="' + (app.view === "settings" ? "" : "active") + '" type="button" data-sales-home>Ventas</button>' + ["Órdenes", "Planeación", "Recursos", "Almacén", "Compras", "Calidad", "Ingeniería", "Agente IA"].map(function (module) { return '<button type="button" data-unavailable="' + esc(module) + '">' + esc(module) + '</button>'; }).join("") + '<button class="' + (app.view === "settings" ? "active" : "") + '" type="button" data-settings>Ajustes</button></nav><div class="live-account"><button class="live-account-trigger" id="account-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu"><span class="profile-initials">' + esc(initials(app.profile && app.profile.display_name)) + '</span><span class="live-account-identity"><b>' + esc(app.profile && app.profile.display_name || "Usuario") + '</b><small>' + esc(app.user.email) + '</small></span><span class="account-chevron" aria-hidden="true"></span></button><div class="live-account-menu" id="account-menu" role="menu" hidden><button type="button" id="sign-out" role="menuitem">Salir</button></div></div></aside><main class="live-main"><header class="live-topbar"><div class="live-breadcrumb">' + (app.view === "settings" ? 'Ajustes / <b>Ventas</b>' : 'Ventas / <b>' + viewName + '</b>') + '</div></header><div id="sales-workspace">' + renderWorkspace() + '</div></main></div>';
+  root.querySelector(".live-nav").id = "mobile-nav";
+  root.querySelector(".live-sidebar .brand").insertAdjacentHTML("afterend", '<button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="mobile-nav"><span aria-hidden="true">☰</span></button>');
   bindEvents();
 }
 
 function renderWorkspace() {
+  if (app.view === "settings") return renderSettings();
   if (app.quoteDetailId) return renderDetail();
   const heading = { summary: ["Resumen comercial", "Resultados, conversión y seguimiento para decidir el siguiente movimiento."], offers: ["Ofertas", "Convierte oportunidades de servicio y refacciones en trabajo rentable."], board: ["Tablero comercial", "Mueve ofertas entre etapas sin separar el dato comercial de la operación."], customers: ["Clientes", "Empresas y contactos que concentran historial comercial y operativo."] }[app.view];
   const action = (app.view === "summary" || app.view === "offers" && !app.showOfferForm) ? '<button class="live-primary" type="button" data-show-offer>+ Nueva oferta</button>' : app.view === "customers" ? '<button class="live-primary" type="button" data-new-customer>+ Nuevo cliente</button>' : "";
@@ -221,16 +227,22 @@ function renderWorkspace() {
 
 function renderSummary() {
   const open = openQuotes();
-  const pipeline = app.opportunities.filter(function (item) { const stage = app.stages.find(function (row) { return row.id === item.stage_id; }); return stage && !["won", "lost"].includes(stage.stage_key); }).reduce(function (sum, item) { return sum + Number(item.estimated_revenue || 0); }, 0);
+  const stages = visibleStages();
+  const pipeline = app.opportunities.filter(function (item) { return stages.some(function (stage) { return stage.id === item.stage_id && !stage.is_closed; }); }).reduce(function (sum, item) { return sum + Number(item.estimated_revenue || 0); }, 0);
   const stale = open.filter(function (quote) { return Date.now() - new Date(quote.updated_at).getTime() > 30 * 86400000; }).length;
   const expiring = open.filter(function (quote) { return quote.valid_until && new Date(quote.valid_until + "T23:59:59").getTime() - Date.now() < 7 * 86400000; }).length;
-  const totals = app.stages.filter(function (stage) { return stage.outcome !== "lost"; }).map(function (stage) { return { stage: stage, total: app.quotes.filter(function (quote) { return quote.stageId === stage.id; }).reduce(function (sum, quote) { return sum + Number(quote.total_amount || 0); }, 0) }; });
+  const totals = stages.map(function (stage) { return { stage: stage, total: app.quotes.filter(function (quote) { return quote.stageId === stage.id; }).reduce(function (sum, quote) { return sum + Number(quote.total_amount || 0); }, 0) }; });
   const max = Math.max.apply(Math, totals.map(function (item) { return item.total; }).concat([1]));
-  return '<section class="live-kpis"><article class="live-kpi"><span>PIPELINE ACTIVO</span><strong>' + compact(pipeline) + '</strong><small>Oportunidades no cerradas</small></article><article class="live-kpi"><span>OFERTAS ABIERTAS</span><strong>' + open.length + '</strong><small>En seguimiento comercial</small></article><article class="live-kpi"><span>OFERTAS PENDIENTES</span><strong>' + stale + '</strong><small>Sin actualización en 30 días</small></article><article class="live-kpi"><span>POR VENCER</span><strong>' + expiring + '</strong><small>Requieren seguimiento</small></article></section><section class="live-grid"><article class="live-panel"><span class="live-label">PIPELINE POR ETAPA</span><h2>' + compact(pipeline) + '</h2><div class="live-bars">' + totals.map(function (item) { return '<div class="live-bar"><span>' + esc(item.stage.name) + '</span><i><b style="width:' + Math.max(2, item.total / max * 100) + '%"></b></i><em>' + compact(item.total) + '</em></div>'; }).join("") + '</div></article><article class="live-panel"><span class="live-label">SIGUIENTE PASO</span><h2>' + (open.length ? "Da seguimiento a una oferta abierta." : "Crea tu primera oferta.") + '</h2><p style="color:var(--muted);line-height:1.55">El tablero, los clientes y las ofertas se guardan en la empresa activa.</p></article></section>' + renderTable(app.quotes.slice(0, 10), "Últimas ofertas actualizadas");
+  return '<section class="live-kpis"><article class="live-kpi"><span>PIPELINE ACTIVO</span><strong>' + compact(pipeline) + '</strong><small>Etapas visibles no cerradas</small></article><article class="live-kpi"><span>OFERTAS ABIERTAS</span><strong>' + open.length + '</strong><small>En seguimiento comercial</small></article><article class="live-kpi"><span>OFERTAS PENDIENTES</span><strong>' + stale + '</strong><small>Sin actualización en 30 días</small></article><article class="live-kpi"><span>POR VENCER</span><strong>' + expiring + '</strong><small>Requieren seguimiento</small></article></section><section class="live-grid"><article class="live-panel"><span class="live-label">PIPELINE POR ETAPA</span><h2>' + compact(pipeline) + '</h2><div class="live-bars">' + (totals.length ? totals.map(function (item) { return '<div class="live-bar"><span>' + esc(item.stage.name) + '</span><i><b style="width:' + Math.max(2, item.total / max * 100) + '%"></b></i><em>' + compact(item.total) + '</em></div>'; }).join("") : '<p class="empty-state">No hay etapas visibles.</p>') + '</div></article><article class="live-panel"><span class="live-label">SIGUIENTE PASO</span><h2>' + (open.length ? "Da seguimiento a una oferta abierta." : "Crea tu primera oferta.") + '</h2><p style="color:var(--muted);line-height:1.55">El tablero, los clientes y las ofertas se guardan en la empresa activa.</p></article></section>' + renderTable(app.quotes.slice(0, 10), "Últimas ofertas actualizadas");
+}
+
+function renderSettings() {
+  const stages = app.stages.filter(function (stage) { return stage.outcome !== "lost"; }).slice(0, 5);
+  return '<section class="live-heading"><div><h1>Ajustes de Ventas</h1><p>Etapas del pipeline comercial de ' + esc(currentOrganization().name) + '.</p></div></section><nav class="live-tabs" aria-label="Módulos de Ajustes"><button type="button" class="active" aria-current="page">Ventas</button></nav><section class="live-surface settings-surface"><div class="live-surface-head"><b>Etapas del tablero</b><span class="live-label">' + stages.length + ' DE 5 ETAPAS</span></div><p class="settings-note">Los cambios también se reflejan en el pipeline del Resumen. Las ofertas de una etapa oculta siguen disponibles en Ofertas.</p><div class="stage-settings-list">' + stages.map(function (stage, index) { return '<form class="stage-settings-row" data-stage-form="' + stage.id + '"><span class="stage-position">' + String(index + 1).padStart(2, "0") + '</span><label>Nombre de la etapa<input name="name" value="' + esc(stage.name) + '" minlength="2" maxlength="80" required ' + (app.canManageStages ? "" : "disabled") + '></label><label class="stage-visibility"><input name="isVisible" type="checkbox" ' + (stage.is_visible ? "checked" : "") + ' ' + (app.canManageStages ? "" : "disabled") + '><span>Visible</span></label>' + (app.canManageStages ? '<button class="live-secondary" type="submit">Guardar</button>' : '') + '</form>'; }).join("") + '</div>' + (app.canManageStages ? '' : '<p class="settings-note">Necesitas permiso de administración de Ventas para modificar las etapas.</p>') + '</section>';
 }
 
 function renderFilters() {
-  return '<div class="live-filters"><input class="offer-filter" id="quote-search" value="' + esc(app.filters.search) + '" placeholder="Buscar oferta o cliente"><select class="offer-filter" id="quote-customer"><option value="">Todos los clientes</option>' + app.customers.map(function (customer) { return '<option value="' + customer.id + '" ' + (String(customer.id) === app.filters.customerId ? "selected" : "") + '>' + esc(customer.display_name) + '</option>'; }).join("") + '</select><select class="offer-filter" id="quote-service"><option value="">Todos los tipos</option><option value="workshop" ' + (app.filters.serviceMode === "workshop" ? "selected" : "") + '>Servicio en taller</option><option value="field" ' + (app.filters.serviceMode === "field" ? "selected" : "") + '>Servicio en campo</option><option value="parts" ' + (app.filters.serviceMode === "parts" ? "selected" : "") + '>Refaccionamiento</option></select><button class="live-secondary" type="button" id="clear-filters">Limpiar</button></div>';
+  return '<div class="live-filters"><input class="offer-filter" type="search" id="quote-search" aria-label="Buscar ofertas" value="' + esc(app.filters.search) + '" placeholder="Buscar oferta o cliente"><select class="offer-filter" id="quote-customer"><option value="">Todos los clientes</option>' + app.customers.map(function (customer) { return '<option value="' + customer.id + '" ' + (String(customer.id) === app.filters.customerId ? "selected" : "") + '>' + esc(customer.display_name) + '</option>'; }).join("") + '</select><select class="offer-filter" id="quote-service"><option value="">Todos los tipos</option><option value="workshop" ' + (app.filters.serviceMode === "workshop" ? "selected" : "") + '>Servicio en taller</option><option value="field" ' + (app.filters.serviceMode === "field" ? "selected" : "") + '>Servicio en campo</option><option value="parts" ' + (app.filters.serviceMode === "parts" ? "selected" : "") + '>Refaccionamiento</option></select><button class="live-secondary" type="button" id="clear-filters">Limpiar</button></div>';
 }
 function renderTable(quotes, title) {
   return '<section class="live-surface"><div class="live-surface-head"><b>' + title + '</b><span class="live-label">' + quotes.length + ' REGISTROS</span></div><div class="live-table"><div class="live-row head"><span>OFERTA</span><span>CLIENTE</span><span>IMPORTE</span><span>ETAPA</span></div>' + (quotes.length ? quotes.map(function (quote) { return '<button class="live-row" type="button" data-quote-id="' + quote.id + '"><span><b>Q-' + quote.quote_number + '</b><small>' + esc(quote.title) + '</small></span><span>' + esc(quote.customerName) + '</span><span>' + money(quote.total_amount, quote.currency_code) + '</span><span><em class="live-status ' + quote.status + '">' + esc(quote.stageName) + '</em></span></button>'; }).join("") : '<div class="empty-state">No hay ofertas con estos filtros.</div>') + '</div></section>';
@@ -323,15 +335,34 @@ function renderOfferForm() {
     </form>
   </section>`;
 }
-function renderOffers() { return app.showOfferForm ? renderOfferForm() : renderFilters() + renderTable(filteredQuotes(), "Ofertas"); }
+function renderOffers() { return app.showOfferForm ? renderOfferForm() : renderFilters() + '<div id="quote-results">' + renderTable(filteredQuotes(), "Ofertas") + '</div>'; }
 function renderBoard() {
-  const quotes = filteredQuotes();
-  return renderFilters() + '<section class="live-surface"><div class="live-surface-head"><b>Pipeline comercial</b><span class="live-label">ARRASTRA PARA ACTUALIZAR ETAPA</span></div><div class="live-board">' + app.stages.filter(function (stage) { return stage.outcome !== "lost"; }).map(function (stage) { const rows = quotes.filter(function (quote) { return quote.stageId === stage.id; }); return '<section class="live-column" data-stage-id="' + stage.id + '"><header><span>' + esc(stage.name) + '</span><b>' + rows.length + '</b></header><div class="live-column-value">' + compact(rows.reduce(function (sum, quote) { return sum + Number(quote.total_amount || 0); }, 0)) + '</div>' + rows.map(function (quote) { return '<button class="live-deal" draggable="true" data-drag-quote="' + quote.id + '" data-quote-id="' + quote.id + '" type="button"><span>' + label[quote.service_mode] + '</span><h3>' + esc(quote.title) + '</h3><p>' + esc(quote.customerName) + '</p><footer><strong>' + compact(quote.total_amount, quote.currency_code) + '</strong><i>' + esc(initials(quote.responsibleName)) + '</i></footer></button>'; }).join("") + '</section>'; }).join("") + '</div></section>';
+  return renderFilters() + '<section class="live-surface"><div class="live-surface-head"><b>Pipeline comercial</b><span class="live-label">ARRASTRA PARA ACTUALIZAR ETAPA</span></div><div class="live-board" id="quote-board" style="--board-columns:' + Math.max(1, visibleStages().length) + '">' + renderBoardColumns(filteredQuotes()) + '</div></section>';
+}
+function renderBoardColumns(quotes) {
+  const stages = visibleStages();
+  return stages.length ? stages.map(function (stage) { const rows = quotes.filter(function (quote) { return quote.stageId === stage.id; }); return '<section class="live-column" data-stage-id="' + stage.id + '"><header><span>' + esc(stage.name) + '</span><b>' + rows.length + '</b></header><div class="live-column-value">' + compact(rows.reduce(function (sum, quote) { return sum + Number(quote.total_amount || 0); }, 0)) + '</div>' + rows.map(function (quote) { return '<button class="live-deal" draggable="true" data-drag-quote="' + quote.id + '" data-quote-id="' + quote.id + '" type="button"><span>' + esc(label[quote.service_mode] || quote.service_mode) + '</span><h3>' + esc(quote.title) + '</h3><p>' + esc(quote.customerName) + '</p><footer><strong>' + compact(quote.total_amount, quote.currency_code) + '</strong><i>' + esc(initials(quote.responsibleName)) + '</i></footer></button>'; }).join("") + '</section>'; }).join("") : '<p class="empty-state">No hay etapas visibles. Activa una en Ajustes.</p>';
+}
+function refreshQuoteResults() {
+  const results = root.querySelector("#quote-results");
+  if (results) results.innerHTML = renderTable(filteredQuotes(), "Ofertas");
+  const board = root.querySelector("#quote-board");
+  if (board) {
+    board.style.setProperty("--board-columns", String(Math.max(1, visibleStages().length)));
+    board.innerHTML = renderBoardColumns(filteredQuotes());
+  }
 }
 function renderCustomers() {
   const existing = app.customerEditorId ? app.customers.find(function (customer) { return customer.id === app.customerEditorId; }) : null;
   const form = app.customerEditorId !== null ? '<section class="live-form-wrap"><h2>' + (existing ? "Editar cliente" : "Nuevo cliente") + '</h2><p>Este registro queda disponible para ofertas, órdenes y servicio.</p><form class="live-form" id="customer-form"><input name="id" type="hidden" value="' + (existing && existing.id || "") + '"><label>Nombre comercial<input name="displayName" value="' + esc(existing && existing.display_name) + '" required minlength="2"></label><label>Estado<select name="status"><option value="prospect" ' + (existing && existing.status === "prospect" ? "selected" : "") + '>Prospecto</option><option value="active" ' + (existing && existing.status === "active" ? "selected" : "") + '>Activo</option><option value="inactive" ' + (existing && existing.status === "inactive" ? "selected" : "") + '>Inactivo</option></select></label><label class="wide">Razón social<input name="legalName" value="' + esc(existing && existing.legal_name) + '"></label><label>RFC<input name="taxId" value="' + esc(existing && existing.tax_id) + '"></label><label>Código de cliente<input name="accountCode" value="' + esc(existing && existing.account_code) + '"></label><p class="customer-field-error wide" id="customer-form-error" role="alert"></p><div class="live-form-actions"><button class="live-secondary" data-cancel-customer type="button">Cancelar</button><button class="live-primary" type="submit">Guardar cliente</button></div></form></section>' : "";
-  return form + '<section class="live-surface"><div class="live-surface-head"><b>Clientes registrados</b><span class="live-label">' + app.customers.length + ' REGISTROS</span></div><div class="live-table"><div class="live-row head"><span>CLIENTE</span><span>RAZÓN SOCIAL</span><span>ESTADO</span><span>ACCIÓN</span></div>' + (app.customers.length ? app.customers.map(function (customer) { return '<div class="live-row"><span><b>' + esc(customer.display_name) + '</b><small>' + esc(customer.account_code || "Sin código") + '</small></span><span>' + esc(customer.legal_name || "Sin razón social") + '</span><span><em class="live-status">' + esc(({ active: "Activo", inactive: "Inactivo", prospect: "Prospecto" })[customer.status] || customer.status) + '</em></span><span><button class="live-secondary" type="button" data-edit-customer="' + customer.id + '">Editar</button></span></div>'; }).join("") : '<div class="empty-state">Registra el primer cliente para crear una oferta.</div>') + '</div></section>';
+  return form + '<div class="customer-list-search"><input class="offer-filter" id="customer-search" type="search" aria-label="Buscar clientes" placeholder="Buscar por nombre, razón social, RFC o código" value="' + esc(app.customerSearch) + '"></div><div id="customer-results">' + renderCustomerTable(filteredCustomers()) + '</div>';
+}
+function filteredCustomers() {
+  const query = app.customerSearch.trim().toLocaleLowerCase("es");
+  return query ? app.customers.filter(function (customer) { return customerMatches(customer, query); }) : app.customers;
+}
+function renderCustomerTable(customers) {
+  return '<section class="live-surface"><div class="live-surface-head"><b>Clientes registrados</b><span class="live-label">' + customers.length + ' REGISTROS</span></div><div class="live-table"><div class="live-row head"><span>CLIENTE</span><span>RAZÓN SOCIAL</span><span>ESTADO</span><span>ACCIÓN</span></div>' + (customers.length ? customers.map(function (customer) { return '<div class="live-row"><span><b>' + esc(customer.display_name) + '</b><small>' + esc(customer.account_code || "Sin código") + '</small></span><span>' + esc(customer.legal_name || "Sin razón social") + '</span><span><em class="live-status">' + esc(({ active: "Activo", inactive: "Inactivo", prospect: "Prospecto" })[customer.status] || customer.status) + '</em></span><span><button class="live-secondary" type="button" data-edit-customer="' + customer.id + '">Editar</button></span></div>'; }).join("") : '<div class="empty-state">' + (app.customerSearch ? 'No hay clientes que coincidan con la búsqueda.' : 'Registra el primer cliente para crear una oferta.') + '</div>') + '</div></section>';
 }
 function renderDetail() {
   const quote = app.quotes.find(function (item) { return item.id === app.quoteDetailId; });
@@ -340,6 +371,12 @@ function renderDetail() {
 }
 
 function bindEvents() {
+  const mobileToggle = root.querySelector("#mobile-nav-toggle");
+  mobileToggle.addEventListener("click", function () {
+    const open = root.querySelector(".live-sidebar").classList.toggle("mobile-nav-open");
+    mobileToggle.setAttribute("aria-expanded", String(open));
+    mobileToggle.setAttribute("aria-label", open ? "Cerrar menú" : "Abrir menú");
+  });
   const accountTrigger = root.querySelector("#account-trigger");
   const accountMenu = root.querySelector("#account-menu");
   accountTrigger.addEventListener("click", function () {
@@ -364,7 +401,9 @@ function bindEvents() {
   if (companies) companies.addEventListener("change", async function (event) { app.organizationId = Number(event.target.value); localStorage.setItem("protek.activeOrganization", String(app.organizationId)); app.quoteDetailId = null; app.customerEditorId = null; setNotice("Empresa activa actualizada."); await loadSales(); });
   root.querySelectorAll("[data-view]").forEach(function (button) { button.addEventListener("click", function () { app.view = button.dataset.view; app.quoteDetailId = null; app.customerEditorId = null; app.showOfferForm = false; app.error = ""; app.notice = ""; renderApp(); }); });
   const salesHome = root.querySelector("[data-sales-home]");
-  if (salesHome) salesHome.addEventListener("click", function () { app.view = "summary"; app.quoteDetailId = null; renderApp(); });
+  if (salesHome) salesHome.addEventListener("click", function () { app.view = "summary"; app.quoteDetailId = null; app.showOfferForm = false; renderApp(); });
+  const settings = root.querySelector("[data-settings]");
+  if (settings) settings.addEventListener("click", function () { app.view = "settings"; app.quoteDetailId = null; app.showOfferForm = false; renderApp(); });
   root.querySelectorAll("[data-unavailable]").forEach(function (button) { button.addEventListener("click", function () { showToast(button.dataset.unavailable + " continúa en preparación. Ventas es el primer módulo conectado.", "info"); }); });
   const showOffer = root.querySelector("[data-show-offer]");
   if (showOffer) showOffer.addEventListener("click", function () { app.view = "offers"; app.showOfferForm = true; renderApp(); root.querySelector('[name="title"]')?.focus(); });
@@ -423,25 +462,61 @@ function bindEvents() {
   const quickCancel = root.querySelector("#quick-customer-cancel");
   if (quickCancel) quickCancel.addEventListener("click", function () { root.querySelector("#quick-customer-fields").hidden = true; customerSearch.focus(); });
   const search = root.querySelector("#quote-search");
-  if (search) search.addEventListener("input", function (event) { app.filters.search = event.target.value; renderApp(); });
+  if (search) search.addEventListener("input", function (event) { app.filters.search = event.target.value; refreshQuoteResults(); });
   const customer = root.querySelector("#quote-customer");
-  if (customer) customer.addEventListener("change", function (event) { app.filters.customerId = event.target.value; renderApp(); });
+  if (customer) customer.addEventListener("change", function (event) { app.filters.customerId = event.target.value; refreshQuoteResults(); });
   const service = root.querySelector("#quote-service");
-  if (service) service.addEventListener("change", function (event) { app.filters.serviceMode = event.target.value; renderApp(); });
+  if (service) service.addEventListener("change", function (event) { app.filters.serviceMode = event.target.value; refreshQuoteResults(); });
   const clear = root.querySelector("#clear-filters");
-  if (clear) clear.addEventListener("click", function () { app.filters = { search: "", customerId: "", serviceMode: "" }; renderApp(); });
-  root.querySelectorAll("[data-quote-id]").forEach(function (button) { button.addEventListener("click", function () { app.quoteDetailId = Number(button.dataset.quoteId); renderApp(); }); });
+  if (clear) clear.addEventListener("click", function () { app.filters = { search: "", customerId: "", serviceMode: "" }; search.value = ""; customer.value = ""; service.value = ""; refreshQuoteResults(); search.focus(); });
+  const customerListSearch = root.querySelector("#customer-search");
+  if (customerListSearch) customerListSearch.addEventListener("input", function (event) { app.customerSearch = event.target.value; root.querySelector("#customer-results").innerHTML = renderCustomerTable(filteredCustomers()); });
   const closeDetail = root.querySelector("[data-close-detail]");
   if (closeDetail) closeDetail.addEventListener("click", function () { app.quoteDetailId = null; app.view = "offers"; renderApp(); });
   const newCustomer = root.querySelector("[data-new-customer]");
   if (newCustomer) newCustomer.addEventListener("click", function () { app.customerEditorId = 0; renderApp(); });
   const cancelCustomer = root.querySelector("[data-cancel-customer]");
   if (cancelCustomer) cancelCustomer.addEventListener("click", function () { app.customerEditorId = null; renderApp(); });
-  root.querySelectorAll("[data-edit-customer]").forEach(function (button) { button.addEventListener("click", function () { app.customerEditorId = Number(button.dataset.editCustomer); renderApp(); }); });
   const customerForm = root.querySelector("#customer-form");
   if (customerForm) customerForm.addEventListener("submit", saveCustomer);
-  root.querySelectorAll("[data-drag-quote]").forEach(function (card) { card.addEventListener("dragstart", function (event) { event.dataTransfer.setData("text/plain", card.dataset.dragQuote); }); });
-  root.querySelectorAll("[data-stage-id]").forEach(function (column) { column.addEventListener("dragover", function (event) { event.preventDefault(); }); column.addEventListener("drop", function (event) { moveOffer(event, Number(column.dataset.stageId)); }); });
+  root.querySelectorAll("[data-stage-form]").forEach(function (form) { form.addEventListener("submit", saveStage); });
+  const workspace = root.querySelector("#sales-workspace");
+  workspace.addEventListener("click", function (event) {
+    const quote = event.target.closest("[data-quote-id]");
+    if (quote) { app.quoteDetailId = Number(quote.dataset.quoteId); renderApp(); return; }
+    const edit = event.target.closest("[data-edit-customer]");
+    if (edit) { app.customerEditorId = Number(edit.dataset.editCustomer); renderApp(); }
+  });
+  workspace.addEventListener("dragstart", function (event) {
+    const card = event.target.closest("[data-drag-quote]");
+    if (card) event.dataTransfer.setData("text/plain", card.dataset.dragQuote);
+  });
+  workspace.addEventListener("dragover", function (event) { if (event.target.closest("[data-stage-id]")) event.preventDefault(); });
+  workspace.addEventListener("drop", function (event) {
+    const column = event.target.closest("[data-stage-id]");
+    if (column) moveOffer(event, Number(column.dataset.stageId));
+  });
+}
+
+async function saveStage(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const stage = app.stages.find(function (item) { return item.id === Number(form.dataset.stageForm); });
+  if (!stage || !app.canManageStages) return;
+  const name = form.elements.namedItem("name").value.trim();
+  const visibility = form.elements.namedItem("isVisible");
+  const isVisible = visibility.checked;
+  if (name.length < 2 || name.length > 80) { showToast("El nombre debe tener entre 2 y 80 caracteres.", "error"); return; }
+  if (!isVisible && stage.is_visible && visibleStages().length === 1) { visibility.checked = true; showToast("Deja al menos una etapa visible en el tablero.", "error"); return; }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const result = await client.from("pipeline_stages").update({ name: name, is_visible: isVisible }).eq("id", stage.id).eq("organization_id", app.organizationId).select("id, name, is_visible").single();
+  button.disabled = false;
+  if (result.error) { setError(result.error); return; }
+  stage.name = result.data.name;
+  stage.is_visible = result.data.is_visible;
+  app.quotes.filter(function (quote) { return quote.stageId === stage.id; }).forEach(function (quote) { quote.stageName = stage.name; });
+  setNotice("Etapa actualizada.");
 }
 
 async function saveOffer(event) {

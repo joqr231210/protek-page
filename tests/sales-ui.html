@@ -10,10 +10,18 @@
 <body>
   <div id="app-root"></div>
   <script>
-    const customers = [{ id: 10, display_name: "Grupo Moller", legal_name: "Grupo Moller SA de CV", tax_id: "GMO123456AAA", account_code: "GM-01", status: "active" }];
+    const customers = [{ id: 10, display_name: "Grupo Moller", legal_name: "Grupo Moller SA de CV", tax_id: "GMO123456AAA", account_code: "GM-01", status: "active" }, { id: 11, display_name: "Taller Norte", legal_name: "Taller Norte SA", tax_id: "TNO123456AAA", account_code: "TN-02", status: "active" }];
+    const stages = [
+      { id: 1, stage_key: "new", name: "Nueva oportunidad", position: 10, outcome: null, is_closed: false, is_visible: true },
+      { id: 2, stage_key: "diagnosis", name: "Diagnóstico", position: 20, outcome: null, is_closed: false, is_visible: true },
+      { id: 3, stage_key: "quoted", name: "Oferta enviada", position: 30, outcome: null, is_closed: false, is_visible: true },
+      { id: 4, stage_key: "negotiation", name: "Negociación", position: 40, outcome: null, is_closed: false, is_visible: true },
+      { id: 5, stage_key: "won", name: "Ganada", position: 50, outcome: "won", is_closed: true, is_visible: true },
+      { id: 6, stage_key: "lost", name: "Perdida", position: 60, outcome: "lost", is_closed: true, is_visible: true }
+    ];
     const opportunities = [];
     const quotes = [];
-    let nextCustomerId = 11;
+    let nextCustomerId = 12;
     let nextQuoteId = 1;
     class Query {
       constructor(table) { this.table = table; }
@@ -23,7 +31,7 @@
       order() { return this; }
       insert(payload) { this.inserted = payload; return this; }
       update(payload) { this.updated = payload; return this; }
-      maybeSingle() { return Promise.resolve({ data: { display_name: "QA Protek" }, error: null }); }
+      maybeSingle() { return Promise.resolve({ data: this.table === "profiles" ? { display_name: "QA Protek" } : { access_level: "admin" }, error: null }); }
       single() {
         if (this.table === "customers" && this.inserted) {
           const customer = { ...this.inserted, id: nextCustomerId++ };
@@ -35,12 +43,18 @@
           Object.assign(customer, this.updated);
           return Promise.resolve({ data: { id: customer.id }, error: null });
         }
+        if (this.table === "pipeline_stages" && this.updated) {
+          const stage = stages.find((item) => item.id === this.rowId);
+          Object.assign(stage, this.updated);
+          return Promise.resolve({ data: { id: stage.id, name: stage.name, is_visible: stage.is_visible }, error: null });
+        }
         return Promise.resolve({ data: { id: 10 }, error: null });
       }
       then(resolve, reject) {
         const data = {
-          organization_members: [{ organization_id: 1, role: "owner", user_id: "qa", organizations: { id: 1, name: "Taller QA", slug: "taller-qa" }, profiles: { display_name: "QA Protek" } }],
-          pipeline_stages: [{ id: 1, stage_key: "new", name: "Nueva oportunidad", position: 1, outcome: null }],
+          organization_members: [{ id: 1, organization_id: 1, role: "owner", user_id: "qa", organizations: { id: 1, name: "Taller QA", slug: "taller-qa" } }],
+          pipeline_stages: stages,
+          organization_member_module_permissions: [{ access_level: "admin" }],
           customers,
           sales_opportunities: opportunities,
           quotes

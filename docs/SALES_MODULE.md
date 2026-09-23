@@ -24,6 +24,8 @@ The connected Sales application is published at the Sites `/app` route. It uses 
 - Primary CRUD is inline in the work surface. Popups are reserved for confirmations, destructive operations, and exceptional decisions.
 - The design system uses 12 px as its minimum text size. Supporting text, labels, table metadata, and controls do not fall below this baseline.
 - The Sites app implements the first end-to-end functional slice: email OTP, company onboarding, company selection, inline customer CRUD, offer creation through the `create_sales_offer` database function, and drag-and-drop stage changes through `move_sales_offer_stage`.
+- In the Sites app, the Offers and Tablero filters update only their results so typing keeps focus. Clientes has a search by commercial name, legal name, RFC, or account code.
+- Sites Ajustes > Ventas lets Sales administrators rename or hide the five board stages for their company. The terminal `lost` stage stays internal; hiding a stage never deletes its offers. The board and Summary pipeline use the same visible-stage list, while Offers remains a complete list.
 
 Attachment persistence is intentionally kept separate from the form interaction. The current detail experience manages attachments in the offer workspace; production persistence should use a company-scoped Supabase Storage bucket and a `quote_documents` record tied to the canonical quote once remote schema administration is available.
 
